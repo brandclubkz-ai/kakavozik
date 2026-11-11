@@ -103,6 +103,7 @@ input[type=number]{-moz-appearance:textfield}
 .inp{width:100%;min-height:58px;padding:0 15px;border-radius:16px;border:1.5px solid var(--line);background:var(--field);font-size:20px;min-width:0}
 .inp.big{font-size:34px;font-weight:800;text-align:center;min-height:76px}
 .inp::placeholder{color:#8B9992}
+.two{display:grid;grid-template-columns:1.25fr 1fr;gap:10px} .two .fld{min-width:0}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .chip{min-height:46px;padding:0 16px;border-radius:23px;background:#fff;border:1.5px solid var(--line);font-size:17px;font-weight:600;display:inline-flex;align-items:center}
 .err{color:var(--red);font-weight:600;font-size:16px;min-height:24px;margin-bottom:8px}
@@ -144,6 +145,9 @@ const unsent=()=>D.items.filter(i=>i.created>(D.sentAt||0));
 function sendDue(){const u=unsent();if(!u.length)return 0;const first=Math.min(...u.map(i=>i.created)),days=Math.floor((Date.now()-first)/864e5);return days>=7?days:0}
 
 const nowHM=()=>{const d=new Date();return pad(d.getHours())+":"+pad(d.getMinutes())};
+const hm=ms=>{const d=new Date(ms);return pad(d.getHours())+":"+pad(d.getMinutes())};
+const itime=i=>i.time||hm(i.created);
+const isort=(a,b)=>itime(b).localeCompare(itime(a))||b.created-a.created;
 const psort=(a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")||a.created-b.created;
 function nextCard(t){
   const L=D.plans.filter(p=>p.date<=t&&!p.done).sort(psort);if(!L.length)return"";
@@ -166,10 +170,10 @@ function planBlock(t){
 }
 function row(i){
   const f=i.type==="fuel";
-  return `<button class="item" data-a="edit" data-v="${esc(i.id)}"><span class="ic ${f?"f":""}">${f?"⛽":"🚛"}</span><span class="nm"><b>${esc(i.place||(f?"Заправка":"Рейс"))}</b><span>${timeOf(i.created)}${f&&i.liters?", "+fmt(i.liters)+" л":""}</span></span><span class="am num">${f?"−":""}${fmt(i.amount)} ₸</span></button>`;
+  return `<button class="item" data-a="edit" data-v="${esc(i.id)}"><span class="ic ${f?"f":""}">${f?"⛽":"🚛"}</span><span class="nm"><b>${esc(i.place||(f?"Заправка":"Рейс"))}</b><span>${itime(i)}${f&&i.liters?", "+fmt(i.liters)+" л":""}</span></span><span class="am num">${f?"−":""}${fmt(i.amount)} ₸</span></button>`;
 }
 function render(){
-  const t=td(),tod=D.items.filter(i=>i.date===t).sort((a,b)=>b.created-a.created),tt=tod.filter(i=>i.type==="trip");
+  const t=td(),tod=D.items.filter(i=>i.date===t).sort(isort),tt=tod.filter(i=>i.type==="trip");
   const pend=D.plans.filter(p=>p.date<=t&&!p.done).length,earned=sum(tt,i=>i.amount),fuel=sum(tod.filter(i=>i.type==="fuel"),i=>i.amount);
   const days={};D.items.forEach(i=>{if(i.date!==t)(days[i.date]=days[i.date]||[]).push(i)});
   const past=Object.keys(days).sort().reverse(),due=sendDue(),un=unsent().length;
@@ -184,7 +188,7 @@ function render(){
   ${planBlock(t)}
   <button class="btn w fuel" data-a="newfuel">⛽ Заправка</button>
   ${tod.length?`<div class="list">${tod.map(row).join("")}</div>`:`<div class="empty"><b>Сегодня записей нет</b>Нажмите «Записать рейс», когда выполните первый</div>`}
-  ${past.length?`<div class="sect">Раньше</div>${past.map(d=>{const L=days[d].sort((a,b)=>b.created-a.created),n=L.filter(i=>i.type==="trip").length,o=ui.open[d];
+  ${past.length?`<div class="sect">Раньше</div>${past.map(d=>{const L=days[d].sort(isort),n=L.filter(i=>i.type==="trip").length,o=ui.open[d];
     return `<button class="dayrow ${o?"open":""}" data-a="day" data-v="${d}" aria-expanded="${!!o}"><span>${dayLabel(d)}</span><span>${n} ${pl(n,RJ)} · ${fmt(sum(L.filter(i=>i.type==="trip"),i=>i.amount))} ₸<i>›</i></span></button>${o?`<div class="list">${L.map(row).join("")}</div>`:""}`}).join("")}`:""}
   <div class="send"><h3>Отправить данные</h3><p>${D.sentAt?`Последний раз отправляли ${new Date(D.sentAt).toLocaleDateString("ru-RU",{day:"numeric",month:"long"})}. Новых записей: ${un}.`:`Ещё не отправляли. Записей: ${D.items.length}.`} Откроется список: выберите WhatsApp, Telegram или почту.</p><button class="btn pri w" data-a="send">📤 Отправить данные</button></div>
   ${ui.modal?`<div class="ov" data-a="close"><div class="sheet" role="dialog" aria-modal="true">${M[ui.modal.k](ui.modal)}</div></div>`:""}`;
@@ -206,13 +210,13 @@ M.done=m=>`<h2>Рейс выполнен</h2><p class="mut" style="margin:-6px 0
 M.trip=m=>{const pl_=m.id?[]:recentPlaces(),am=topAmounts();return `<h2>${m.id?"Рейс":"Новый рейс"}</h2>
   <div class="fld"><label>Сумма, ₸</label><input class="inp big num" type="number" inputmode="numeric" data-f="amount" value="${esc(m.amount||"")}" placeholder="0">${am.length?`<div class="chips">${am.map(a=>`<button class="chip" data-a="pickamt" data-v="${a}">${fmt(a)}</button>`).join("")}</div>`:""}</div>
   <div class="fld"><label>Клиент или адрес (если нужно)</label><input class="inp" data-f="place" value="${esc(m.place||"")}" placeholder="Например, Айгуль или ул. Абая 5" autocomplete="off">${pl_.length?`<div class="chips">${pl_.map(i=>`<button class="chip" data-a="pickplace" data-v="${esc(i.place)}">${esc(i.place)}</button>`).join("")}</div>`:""}</div>
-  <div class="fld"><label>День</label><input class="inp" type="date" data-f="date" value="${esc(m.date)}"></div>
+  <div class="two"><div class="fld"><label>День</label><input class="inp" type="date" data-f="date" value="${esc(m.date)}"></div><div class="fld"><label>Время</label><input class="inp" type="time" data-f="time" value="${esc(m.time||"")}"></div></div>
   <p class="err" id="err"></p>
   <div class="btns">${m.id?`<button class="btn dng" style="flex:none" data-a="del">Удалить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="saveitem">${m.id?"Сохранить":"Записать"}</button></div>`};
 M.fuel=m=>`<h2>${m.id?"Заправка":"Заправка"}</h2>
   <div class="fld"><label>Сумма, ₸</label><input class="inp big num" type="number" inputmode="numeric" data-f="amount" value="${esc(m.amount||"")}" placeholder="0"></div>
   <div class="fld"><label>Сколько литров (если знаете)</label><input class="inp" type="number" inputmode="decimal" data-f="liters" value="${esc(m.liters||"")}" placeholder="0"></div>
-  <div class="fld"><label>День</label><input class="inp" type="date" data-f="date" value="${esc(m.date)}"></div>
+  <div class="two"><div class="fld"><label>День</label><input class="inp" type="date" data-f="date" value="${esc(m.date)}"></div><div class="fld"><label>Время</label><input class="inp" type="time" data-f="time" value="${esc(m.time||"")}"></div></div>
   <p class="err" id="err"></p>
   <div class="btns">${m.id?`<button class="btn dng" style="flex:none" data-a="del">Удалить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="saveitem">${m.id?"Сохранить":"Записать"}</button></div>`;
 
@@ -223,16 +227,16 @@ const open=m=>{ui.modal=m;ui.reset=true;render()};
 const syncModal=()=>{if(!ui.modal)return;document.querySelectorAll(".sheet [data-f]").forEach(el=>{ui.modal[el.dataset.f]=el.value})};
 const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
 function csvFile(){
-  const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"',L=D.items.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.created-b.created);
-  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал"],...L.map(i=>[i.date,timeOf(i.created),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):""])];
+  const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"',L=D.items.slice().sort((a,b)=>a.date.localeCompare(b.date)||itime(a).localeCompare(itime(b))||a.created-b.created);
+  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал"],...L.map(i=>[i.date,itime(i),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):""])];
   return new Blob(["﻿"+rows.map(r=>r.map(q).join(";")).join("\r\n")],{type:"text/csv;charset=utf-8"});
 }
 const A={
   close(){ui.modal=null;render()},
   day(el){ui.open[el.dataset.v]=!ui.open[el.dataset.v];render()},
-  newtrip(){open({k:"trip",date:td()})},
-  newfuel(){open({k:"fuel",date:td()})},
-  edit(el){const i=D.items.find(x=>x.id===el.dataset.v);if(i)open({k:i.type,id:i.id,amount:i.amount,place:i.place,liters:i.liters||"",date:i.date})},
+  newtrip(){open({k:"trip",date:td(),time:nowHM()})},
+  newfuel(){open({k:"fuel",date:td(),time:nowHM()})},
+  edit(el){const i=D.items.find(x=>x.id===el.dataset.v);if(i)open({k:i.type,id:i.id,amount:i.amount,place:i.place,liters:i.liters||"",date:i.date,time:itime(i)})},
   newplan(){open({k:"plan",date:td()})},
   planday(el){syncModal();ui.modal.date=el.dataset.v==="today"?td():tom(td());render()},
   editplan(el){const p=D.plans.find(x=>x.id===el.dataset.v);if(p)open({k:"plan",id:p.id,place:p.place,amount:p.amount||"",date:p.date,time:p.time||""})},
@@ -248,14 +252,14 @@ const A={
     toast("Вернули в план","Отменить",()=>{if(it){D.items.push(it);p.tripId=it.id}p.done=true;done()})},
   savedone(){syncModal();const m=ui.modal,a=num(m.amount),p=D.plans.find(x=>x.id===m.planId);if(!p){A.close();return}
     if(!(a>0)){err("Введите сумму");return}
-    const it={id:uid(),created:Date.now(),type:"trip",date:td(),place:p.place,amount:a,liters:0,planId:p.id,started:p.started||null};
+    const it={id:uid(),created:Date.now(),type:"trip",date:td(),time:nowHM(),place:p.place,amount:a,liters:0,planId:p.id,started:p.started||null};
     D.items.push(it);p.done=true;p.tripId=it.id;ui.modal=null;done();
     toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);p.done=false;p.tripId=null;done()})},
   pickamt(el){syncModal();ui.modal.amount=el.dataset.v;render()},
   pickplace(el){syncModal();const m=ui.modal,n=el.dataset.v,last=recentPlaces().find(i=>i.place===n);m.place=n;if(!num(m.amount)&&last)m.amount=last.amount;render()},
   saveitem(){syncModal();const m=ui.modal,a=num(m.amount);
     if(!(a>0)){err("Введите сумму");return}if(!m.date){err("Укажите день");return}
-    const rec={type:m.k,date:m.date,place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0};
+    const rec={type:m.k,date:m.date,time:m.time||nowHM(),place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0};
     if(m.id){Object.assign(D.items.find(x=>x.id===m.id),rec);ui.modal=null;done();toast("Сохранено");return}
     const it=Object.assign({id:uid(),created:Date.now()},rec);D.items.push(it);ui.modal=null;done();
     toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);done()})},
