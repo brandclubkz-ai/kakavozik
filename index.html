@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Рейсы">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#EEF1EA">
+<title>Рейсы</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF1EA; --ink:#13231D; --ink2:#41534A; --mut:#5E6E67; --line:#D3DBD0; --field:#F6F8F3;
+  --g:#13694B; --gd:#0C4B35; --gl:#DDEFE4; --am:#F2A900; --aml:#FFF0C9; --aink:#6B4200; --red:#B42318; --or:#B4400F;
+  --font:'Onest',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:18px;line-height:1.35}
+body{min-height:100vh;min-height:100dvh}
+body.lock{overflow:hidden}
+button,input{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none;text-align:inherit}
+button:focus-visible,input:focus-visible{outline:3px solid var(--am);outline-offset:2px}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+input[type=number]{-moz-appearance:textfield}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+#app{max-width:540px;margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(40px + env(safe-area-inset-bottom))}
+.mut{color:var(--mut)}
+
+.hero{background:var(--g);color:#fff;border-radius:28px;padding:16px 18px 18px;margin-bottom:12px}
+.when{font-size:17px;font-weight:600;opacity:.92}
+.cnt{display:flex;align-items:flex-end;gap:14px;margin:8px 0 14px}
+.cnt b{font-size:88px;font-weight:800;line-height:.86;letter-spacing:-.05em}
+.cnt span{font-size:21px;font-weight:600;line-height:1.2;padding-bottom:4px}
+.sums{display:grid;grid-template-columns:1fr 1fr;gap:10px;border-top:1.5px solid rgba(255,255,255,.22);padding-top:12px}
+.sums small{display:block;font-size:15px;opacity:.82} .sums b{font-size:24px;font-weight:700;white-space:nowrap}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:58px;padding:0 18px;border-radius:18px;font-weight:700;font-size:18px;background:#fff;border:1.5px solid var(--line);color:var(--ink);text-align:center}
+.btn.pri{background:var(--g);border-color:var(--g);color:#fff}
+.btn.add{width:100%;min-height:78px;font-size:23px;font-weight:800;border-radius:24px;box-shadow:0 8px 22px rgba(19,105,75,.28);margin-bottom:10px}
+.btn.dng{color:var(--red);border-color:#E6B3AD}
+.btn.w{width:100%} .btn:active{transform:scale(.985)}
+.btns{display:flex;gap:10px} .btns .btn{flex:1} .btns .btn.pri{flex:1.7}
+.fuel{margin-bottom:14px}
+
+.banner{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:18px;background:var(--aml);color:var(--aink);margin-bottom:12px;font-size:16px;font-weight:600;width:100%}
+.banner>span:first-child{font-size:24px} .banner .btn{flex:none;min-height:44px;font-size:16px;padding:0 14px;background:var(--aink);border-color:var(--aink);color:#fff}
+
+.sect{margin:18px 4px 8px;font-size:16px;font-weight:700;color:var(--ink2)}
+.list{background:#fff;border:1.5px solid var(--line);border-radius:22px;padding:2px 12px;margin-bottom:10px}
+.item{width:100%;display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1.5px solid var(--line);min-height:68px}
+.item:last-child{border:none}
+.ic{flex:none;width:46px;height:46px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-size:24px;background:var(--gl)}
+.ic.f{background:#FFE7DC}
+.item .nm{flex:1;min-width:0} .item .nm b{display:block;font-size:18px;font-weight:600;overflow-wrap:anywhere} .item .nm span{display:block;font-size:15px;color:var(--mut)}
+.item .am{font-size:20px;font-weight:800;flex:none;white-space:nowrap}
+.dayrow{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:60px;padding:8px 16px;background:#fff;border:1.5px solid var(--line);border-radius:18px;margin-bottom:8px;font-size:17px;font-weight:600}
+.dayrow span:last-child{font-size:15px;color:var(--mut);font-weight:500;text-align:right}
+.dayrow i{font-style:normal;display:inline-block;margin-left:6px;transition:transform .15s} .dayrow.open i{transform:rotate(90deg)}
+.empty{text-align:center;padding:26px 18px;color:var(--mut);font-size:17px} .empty b{display:block;font-size:19px;color:var(--ink2);margin-bottom:4px}
+.send{background:#fff;border:1.5px solid var(--line);border-radius:22px;padding:16px;margin-top:22px}
+.send h3{font-size:19px;font-weight:700} .send p{font-size:15px;color:var(--mut);margin:3px 0 12px}
+
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom));z-index:300;background:var(--ink);color:#fff;padding:14px 18px;border-radius:16px;font-size:17px;font-weight:600;display:none;gap:16px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:92vw}
+#toast button{color:var(--am);font-weight:800;font-size:17px;min-height:34px}
+
+.ov{position:fixed;inset:0;z-index:100;background:rgba(10,24,18,.55);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:#fff;border-radius:28px 28px 0 0;width:100%;max-width:540px;max-height:94dvh;overflow-y:auto;padding:12px 18px calc(24px + env(safe-area-inset-bottom));animation:up .2s ease-out}
+.sheet::before{content:"";display:block;width:44px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 14px}
+.sheet h2{font-size:25px;font-weight:800;letter-spacing:-.025em;margin-bottom:14px}
+@keyframes up{from{transform:translateY(36px);opacity:0}}
+@media (prefers-reduced-motion:reduce){.sheet{animation:none}.btn:active{transform:none}}
+.fld{margin-bottom:14px} .fld>label{display:block;font-size:16px;font-weight:600;color:var(--ink2);margin-bottom:6px}
+.inp{width:100%;min-height:58px;padding:0 15px;border-radius:16px;border:1.5px solid var(--line);background:var(--field);font-size:20px;min-width:0}
+.inp.big{font-size:34px;font-weight:800;text-align:center;min-height:76px}
+.inp::placeholder{color:#8B9992}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chip{min-height:46px;padding:0 16px;border-radius:23px;background:#fff;border:1.5px solid var(--line);font-size:17px;font-weight:600;display:inline-flex;align-items:center}
+.err{color:var(--red);font-weight:600;font-size:16px;min-height:24px;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast"></div>
+<script>
+"use strict";
+const LS={get(k){try{return JSON.parse(localStorage.getItem(k))}catch{return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch{return false}}};
+const KEY="reysy2-v1";
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad=n=>String(n).padStart(2,"0");
+const fmt=n=>new Intl.NumberFormat("ru-RU").format(Math.round(Math.abs(n||0)));
+const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const td=()=>iso(new Date());
+const parse=s=>{const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
+const dayLabel=s=>parse(s).toLocaleDateString("ru-RU",{weekday:"short",day:"numeric",month:"long"});
+const fullDate=s=>parse(s).toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long"});
+const timeOf=ms=>new Date(ms).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
+const sum=(a,f=x=>x)=>a.reduce((s,x)=>s+(+f(x)||0),0);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const num=v=>{const n=parseFloat(String(v??"").replace(/\s/g,"").replace(",","."));return isNaN(n)?0:n};
+const pl=(n,f)=>{n=Math.abs(n);const a=n%10,b=n%100;return f[(b>10&&b<20)?2:a===1?0:(a>=2&&a<=4)?1:2]};
+const RJ=["рейс","рейса","рейсов"];
+
+let D;
+const ui={open:{},modal:null,reset:false,today:td()};
+function load(){D=LS.get(KEY)||{};D.items=D.items||[];D.sentAt=D.sentAt||null;try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch{}}
+function save(){if(!LS.set(KEY,D))toast("Не удалось сохранить: память телефона заполнена")}
+const done=()=>{save();render()};
+
+const trips=()=>D.items.filter(i=>i.type==="trip");
+function recentPlaces(){const seen={},out=[];trips().sort((a,b)=>b.created-a.created).forEach(i=>{const k=(i.place||"").trim().toLowerCase();if(k&&!seen[k]){seen[k]=i;out.push(i)}});return out.slice(0,8)}
+function topAmounts(){const m={};trips().forEach(i=>{m[i.amount]=(m[i.amount]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1]||b[0]-a[0]).slice(0,4).map(x=>+x[0]).sort((a,b)=>a-b)}
+const unsent=()=>D.items.filter(i=>i.created>(D.sentAt||0));
+function sendDue(){const u=unsent();if(!u.length)return 0;const first=Math.min(...u.map(i=>i.created)),days=Math.floor((Date.now()-first)/864e5);return days>=7?days:0}
+
+function row(i){
+  const f=i.type==="fuel";
+  return `<button class="item" data-a="edit" data-v="${esc(i.id)}"><span class="ic ${f?"f":""}">${f?"⛽":"🚛"}</span><span class="nm"><b>${esc(i.place||(f?"Заправка":"Рейс"))}</b><span>${timeOf(i.created)}${f&&i.liters?", "+fmt(i.liters)+" л":""}</span></span><span class="am num">${f?"−":""}${fmt(i.amount)} ₸</span></button>`;
+}
+function render(){
+  const t=td(),tod=D.items.filter(i=>i.date===t).sort((a,b)=>b.created-a.created),tt=tod.filter(i=>i.type==="trip");
+  const earned=sum(tt,i=>i.amount),fuel=sum(tod.filter(i=>i.type==="fuel"),i=>i.amount);
+  const days={};D.items.forEach(i=>{if(i.date!==t)(days[i.date]=days[i.date]||[]).push(i)});
+  const past=Object.keys(days).sort().reverse(),due=sendDue(),un=unsent().length;
+  const sh=$(".sheet"),st=ui.reset?0:(sh?sh.scrollTop:0);ui.reset=false;
+  document.body.classList.toggle("lock",!!ui.modal);
+  $("#app").innerHTML=`<section class="hero" aria-label="Сегодня"><div class="when">Сегодня, ${fullDate(t)}</div>
+    <div class="cnt"><b class="num">${tt.length}</b><span>${tt.length?pl(tt.length,RJ)+"<br>за сегодня":"рейсов пока<br>нет"}</span></div>
+    <div class="sums"><div><small>Заработано</small><b class="num">${fmt(earned)} ₸</b></div><div><small>Топливо</small><b class="num">${fmt(fuel)} ₸</b></div></div></section>
+  ${due?`<div class="banner"><span>📤</span><span style="flex:1">Данные не отправляли ${due} ${pl(due,["день","дня","дней"])}</span><button class="btn" data-a="send">Отправить</button></div>`:""}
+  <button class="btn pri add" data-a="newtrip">＋ Записать рейс</button>
+  <button class="btn w fuel" data-a="newfuel">⛽ Заправка</button>
+  ${tod.length?`<div class="list">${tod.map(row).join("")}</div>`:`<div class="empty"><b>Сегодня записей нет</b>Нажмите «Записать рейс», когда выполните первый</div>`}
+  ${past.length?`<div class="sect">Раньше</div>${past.map(d=>{const L=days[d].sort((a,b)=>b.created-a.created),n=L.filter(i=>i.type==="trip").length,o=ui.open[d];
+    return `<button class="dayrow ${o?"open":""}" data-a="day" data-v="${d}" aria-expanded="${!!o}"><span>${dayLabel(d)}</span><span>${n} ${pl(n,RJ)} · ${fmt(sum(L.filter(i=>i.type==="trip"),i=>i.amount))} ₸<i>›</i></span></button>${o?`<div class="list">${L.map(row).join("")}</div>`:""}`}).join("")}`:""}
+  <div class="send"><h3>Отправить данные</h3><p>${D.sentAt?`Последний раз отправляли ${new Date(D.sentAt).toLocaleDateString("ru-RU",{day:"numeric",month:"long"})}. Новых записей: ${un}.`:`Ещё не отправляли. Записей: ${D.items.length}.`} Откроется список: выберите WhatsApp, Telegram или почту.</p><button class="btn pri w" data-a="send">📤 Отправить данные</button></div>
+  ${ui.modal?`<div class="ov" data-a="close"><div class="sheet" role="dialog" aria-modal="true">${M[ui.modal.k](ui.modal)}</div></div>`:""}`;
+  if(ui.modal){const n=$(".sheet");if(n)n.scrollTop=st}
+}
+
+const M={};
+M.trip=m=>{const pl_=m.id?[]:recentPlaces(),am=topAmounts();return `<h2>${m.id?"Рейс":"Новый рейс"}</h2>
+  <div class="fld"><label>Сумма, ₸</label><input class="inp big num" type="number" inputmode="numeric" data-f="amount" value="${esc(m.amount||"")}" placeholder="0">${am.length?`<div class="chips">${am.map(a=>`<button class="chip" data-a="pickamt" data-v="${a}">${fmt(a)}</button>`).join("")}</div>`:""}</div>
+  <div class="fld"><label>Клиент или адрес (если нужно)</label><input class="inp" data-f="place" value="${esc(m.place||"")}" placeholder="Например, Айгуль или ул. Абая 5" autocomplete="off">${pl_.length?`<div class="chips">${pl_.map(i=>`<button class="chip" data-a="pickplace" data-v="${esc(i.place)}">${esc(i.place)}</button>`).join("")}</div>`:""}</div>
+  <div class="fld"><label>День</label><input class="inp" type="date" data-f="date" value="${esc(m.date)}"></div>
+  <p class="err" id="err"></p>
+  <div class="btns">${m.id?`<button class="btn dng" style="flex:none" data-a="del">Удалить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="saveitem">${m.id?"Сохранить":"Записать"}</button></div>`};
+M.fuel=m=>`<h2>${m.id?"Заправка":"Заправка"}</h2>
+  <div class="fld"><label>Сумма, ₸</label><input class="inp big num" type="number" inputmode="numeric" data-f="amount" value="${esc(m.amount||"")}" placeholder="0"></div>
+  <div class="fld"><label>Сколько литров (если знаете)</label><input class="inp" type="number" inputmode="decimal" data-f="liters" value="${esc(m.liters||"")}" placeholder="0"></div>
+  <div class="fld"><label>День</label><input class="inp" type="date" data-f="date" value="${esc(m.date)}"></div>
+  <p class="err" id="err"></p>
+  <div class="btns">${m.id?`<button class="btn dng" style="flex:none" data-a="del">Удалить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="saveitem">${m.id?"Сохранить":"Записать"}</button></div>`;
+
+let toastT;
+function toast(msg,act,fn){const t=$("#toast");t.innerHTML=`<span>${esc(msg)}</span>${act?`<button>${esc(act)}</button>`:""}`;t.style.display="flex";if(act)t.querySelector("button").onclick=()=>{t.style.display="none";fn()};clearTimeout(toastT);toastT=setTimeout(()=>t.style.display="none",act?7000:2800)}
+const err=s=>{const e=$("#err");if(e)e.textContent=s};
+const open=m=>{ui.modal=m;ui.reset=true;render()};
+const syncModal=()=>{if(!ui.modal)return;document.querySelectorAll(".sheet [data-f]").forEach(el=>{ui.modal[el.dataset.f]=el.value})};
+const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+function csvFile(){
+  const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"',L=D.items.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.created-b.created);
+  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры"],...L.map(i=>[i.date,timeOf(i.created),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||""])];
+  return new Blob(["﻿"+rows.map(r=>r.map(q).join(";")).join("\r\n")],{type:"text/csv;charset=utf-8"});
+}
+const A={
+  close(){ui.modal=null;render()},
+  day(el){ui.open[el.dataset.v]=!ui.open[el.dataset.v];render()},
+  newtrip(){open({k:"trip",date:td()})},
+  newfuel(){open({k:"fuel",date:td()})},
+  edit(el){const i=D.items.find(x=>x.id===el.dataset.v);if(i)open({k:i.type,id:i.id,amount:i.amount,place:i.place,liters:i.liters||"",date:i.date})},
+  pickamt(el){syncModal();ui.modal.amount=el.dataset.v;render()},
+  pickplace(el){syncModal();const m=ui.modal,n=el.dataset.v,last=recentPlaces().find(i=>i.place===n);m.place=n;if(!num(m.amount)&&last)m.amount=last.amount;render()},
+  saveitem(){syncModal();const m=ui.modal,a=num(m.amount);
+    if(!(a>0)){err("Введите сумму");return}if(!m.date){err("Укажите день");return}
+    const rec={type:m.k,date:m.date,place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0};
+    if(m.id){Object.assign(D.items.find(x=>x.id===m.id),rec);ui.modal=null;done();toast("Сохранено");return}
+    const it=Object.assign({id:uid(),created:Date.now()},rec);D.items.push(it);ui.modal=null;done();
+    toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);done()})},
+  del(){const i=D.items.findIndex(x=>x.id===ui.modal.id);if(i<0)return;const [it]=D.items.splice(i,1);ui.modal=null;done();toast("Запись удалена","Вернуть",()=>{D.items.splice(i,0,it);done()})},
+  async send(){
+    if(!D.items.length){toast("Пока нечего отправлять");return}
+    const blob=csvFile(),name=`reysy-${td()}.csv`;let ok=true;
+    try{const f=new File([blob],name,{type:blob.type});
+      if(isMobile&&navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f],title:"Рейсы",text:"Данные по рейсам"});
+      else{const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}}
+    catch(e){if(e&&e.name==="AbortError")ok=false}
+    if(ok){D.sentAt=Date.now();done();toast("Данные отправлены")}
+  }
+};
+document.addEventListener("click",e=>{const el=e.target.closest("[data-a]");if(!el)return;if(el.classList.contains("ov")&&e.target!==el)return;const f=A[el.dataset.a];if(f)f(el)});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&ui.modal){ui.modal=null;render()}});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&td()!==ui.today){ui.today=td();render()}});
+load();render();
+if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"))navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
