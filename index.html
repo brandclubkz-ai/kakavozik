@@ -95,6 +95,12 @@ input[type=number]{-moz-appearance:textfield}
 .total .tl{flex:1;min-width:0;font-size:16px;font-weight:600;color:var(--ink2)} .total .tl small{display:block;font-size:14px;font-weight:500;color:var(--mut)}
 .total b{font-size:30px;font-weight:800;letter-spacing:-.03em;color:var(--g);white-space:nowrap}
 .srow{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1.5px solid var(--line);font-size:17px;font-weight:600} .srow span:last-child{text-align:right;font-weight:500;color:var(--ink2)}
+.sug{border:1.5px solid var(--line);border-radius:16px;margin-top:8px;overflow:hidden;background:#fff} .sug:empty{display:none}
+.sgi{display:flex;width:100%;justify-content:space-between;align-items:center;gap:10px;min-height:52px;padding:8px 14px;border-bottom:1.5px solid var(--line);font-size:18px} .sgi:last-child{border:none}
+.sgi b{font-weight:600;overflow-wrap:anywhere;min-width:0} .sgi span{flex:none;font-size:15px;color:var(--mut)}
+.bad{color:var(--red);font-weight:700;font-style:normal} .chip.on.no{background:var(--red);border-color:var(--red)}
+.debt{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;min-height:56px;padding:10px 16px;margin-bottom:10px;border-radius:18px;background:#FBE5E2;color:var(--red);font-size:17px;font-weight:700}
+.drow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1.5px solid var(--line)} .drow div{flex:1;min-width:0} .drow b{display:block;font-size:18px;font-weight:600;overflow-wrap:anywhere} .drow small{font-size:15px;color:var(--mut)} .drow .btn{flex:none;min-height:48px}
 .hint{font-size:15px;color:var(--mut);margin:0 0 14px} .hint b{color:var(--ink2)}
 .steps{margin:0 0 14px 20px;font-size:15px;color:var(--ink2)} .steps li{margin-bottom:5px}
 
@@ -149,6 +155,10 @@ const done=()=>{save();render()};
 const trips=()=>D.items.filter(i=>i.type==="trip");
 function recentPlaces(){const seen={},out=[];trips().sort((a,b)=>b.created-a.created).forEach(i=>{const k=(i.place||"").trim().toLowerCase();if(k&&!seen[k]){seen[k]=i;out.push(i)}});return out.slice(0,8)}
 function topAmounts(){const m={};trips().forEach(i=>{m[i.amount]=(m[i.amount]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1]||b[0]-a[0]).slice(0,4).map(x=>+x[0]).sort((a,b)=>a-b)}
+/* Адреса и клиенты: список сам пополняется из записанных рейсов и плана, частые идут первыми. */
+function places(){const m={};[...trips(),...D.plans.filter(p=>!p.tripId)].forEach(i=>{const n=(i.place||"").trim(),k=n.toLowerCase();if(!k)return;const o=m[k]||(m[k]={name:n,n:0,last:0,la:0,amount:0});o.n++;if(i.created>=o.last){o.last=i.created;o.name=n}if(i.amount&&i.created>=o.la){o.la=i.created;o.amount=i.amount}});return Object.values(m).sort((a,b)=>b.n-a.n||b.last-a.last)}
+function sugHTML(q){q=(q||"").trim().toLowerCase();return places().filter(p=>p.name.toLowerCase()!==q&&(!q||p.name.toLowerCase().includes(q))).slice(0,5).map(p=>`<button class="sgi" data-a="pickplace" data-v="${esc(p.name)}"><b>${esc(p.name)}</b><span class="num">${p.n>1?p.n+" "+pl(p.n,["раз","раза","раз"])+(p.amount?" · ":""):""}${p.amount?fmt(p.amount)+" ₸":""}</span></button>`).join("")}
+const paidTog=m=>`<div class="fld"><div class="chips" style="margin-top:0"><button class="chip ${m.unpaid?"":"on"}" data-a="setpaid" data-v="1">Оплатил</button><button class="chip ${m.unpaid?"on no":""}" data-a="setpaid" data-v="0">Не оплатил</button></div></div>`;
 /* Смены: день считается незакрытым, если в нём есть записи новее последнего закрытия (или что-то удаляли). */
 const stamp=i=>i.upd||i.created;
 const tgOn=()=>!!(D.tg&&D.tg.token&&D.tg.chat);
@@ -156,7 +166,7 @@ const waOn=()=>!!D.wa;
 /* Текст для WhatsApp: итоги и список записей по дням. Слишком длинный сокращаем до итогов. */
 function waText(dates,caption){
   const L=[];dates.forEach(d=>{const it=D.items.filter(i=>i.date===d).sort((a,b)=>itime(a).localeCompare(itime(b))||a.created-b.created);if(!it.length)return;L.push("",dates.length>1?dayLabel(d)+":":"Записи:");
-    it.forEach(i=>L.push(`${itime(i)} ${i.type==="fuel"?"Заправка"+(i.liters?" "+fmt(i.liters)+" л":""):(i.place||"Рейс")}: ${i.type==="fuel"?"−":""}${fmt(i.amount)} ₸`))});
+    it.forEach(i=>L.push(`${itime(i)} ${i.type==="fuel"?"Заправка"+(i.liters?" "+fmt(i.liters)+" л":""):(i.place||"Рейс")}: ${i.type==="fuel"?"−":""}${fmt(i.amount)} ₸${i.unpaid?" (не оплатил)":""}`))});
   const full=caption+"\n"+L.join("\n");return full.length>3000?caption:full;
 }
 function waOpen(text){const q="phone="+D.wa+"&text="+encodeURIComponent(text);if(isMobile)location.href="whatsapp://send?"+q;else window.open("https://api.whatsapp.com/send?"+q,"_blank")}
@@ -164,14 +174,20 @@ function dirtyDates(){const s=new Set(Object.keys(D.dirty)),t=td();D.items.forEa
 function dayStat(d){const L=D.items.filter(i=>i.date===d),T=L.filter(i=>i.type==="trip");return{n:T.length,earned:sum(T,i=>i.amount),fuel:sum(L.filter(i=>i.type==="fuel"),i=>i.amount)}}
 function csvText(L){
   const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"';L=L.slice().sort((a,b)=>a.date.localeCompare(b.date)||itime(a).localeCompare(itime(b))||a.created-b.created);
-  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал"],...L.map(i=>[i.date,itime(i),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):""])];
+  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал","Оплата"],...L.map(i=>[i.date,itime(i),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):"",i.unpaid?"не оплачено":i.paidAt?"оплачено позже":""])];
   return "﻿"+rows.map(r=>r.map(q).join(";")).join("\r\n");
 }
 function shiftReport(dates){
   const st=dates.map(d=>[d,dayStat(d)]),one=dates.length===1,tot={n:sum(st,x=>x[1].n),earned:sum(st,x=>x[1].earned),fuel:sum(st,x=>x[1].fuel)};
   let lines=[one?`🚛 Смена закрыта: ${dayLabel(dates[0])}`:`🚛 Смена закрыта, дней: ${dates.length}`];
   if(!one)st.slice(-12).forEach(([d,s])=>lines.push(`${dayLabel(d)}: ${s.n} ${pl(s.n,RJ)}, ${fmt(s.earned)} ₸`));
-  lines.push(`Рейсов: ${tot.n}`,`Заработано: ${fmt(tot.earned)} ₸`,`Топливо: ${fmt(tot.fuel)} ₸`,`Всего рейсов за всё время: ${fmt(trips().length)}`);
+  const unp=trips().filter(i=>i.unpaid&&dates.includes(i.date)),back=trips().filter(i=>!i.unpaid&&i.paidAt&&dates.includes(iso(new Date(i.paidAt)))),debt=trips().filter(i=>i.unpaid);
+  lines.push(`Рейсов: ${tot.n}`,`Заработано: ${fmt(tot.earned)} ₸`);
+  if(unp.length)lines.push(`Из них не оплатили: ${unp.length} ${pl(unp.length,RJ)}, ${fmt(sum(unp,i=>i.amount))} ₸`);
+  lines.push(`Топливо: ${fmt(tot.fuel)} ₸`);
+  back.slice(0,6).forEach(i=>lines.push(`Вернули долг: ${i.place||"рейс"} (${dayLabel(i.date)}), ${fmt(i.amount)} ₸`));
+  if(debt.length)lines.push(`Всего долгов: ${debt.length} ${pl(debt.length,RJ)} на ${fmt(sum(debt,i=>i.amount))} ₸`);
+  lines.push(`Всего рейсов за всё время: ${fmt(trips().length)}`);
   return{caption:lines.join("\n").slice(0,1000),csv:csvText(D.items.filter(i=>dates.includes(i.date))),name:one?`reysy-${dates[0]}.csv`:`reysy-${dates[0]}_${dates[dates.length-1]}.csv`,tot};
 }
 async function tgCall(method,body,token){
@@ -212,19 +228,20 @@ function planBlock(t){
 }
 function row(i){
   const f=i.type==="fuel";
-  return `<button class="item" data-a="edit" data-v="${esc(i.id)}"><span class="ic ${f?"f":""}">${f?"⛽":"🚛"}</span><span class="nm"><b>${esc(i.place||(f?"Заправка":"Рейс"))}</b><span>${itime(i)}${f&&i.liters?", "+fmt(i.liters)+" л":""}</span></span><span class="am num">${f?"−":""}${fmt(i.amount)} ₸</span></button>`;
+  return `<button class="item" data-a="edit" data-v="${esc(i.id)}"><span class="ic ${f?"f":""}">${f?"⛽":"🚛"}</span><span class="nm"><b>${esc(i.place||(f?"Заправка":"Рейс"))}</b><span>${itime(i)}${f&&i.liters?", "+fmt(i.liters)+" л":""}${i.unpaid?` · <em class="bad">не оплатил</em>`:""}</span></span><span class="am num">${f?"−":""}${fmt(i.amount)} ₸</span></button>`;
 }
 function render(){
   const t=td(),tod=D.items.filter(i=>i.date===t).sort(isort),tt=tod.filter(i=>i.type==="trip");
   const pend=D.plans.filter(p=>p.date<=t&&!p.done).length,earned=sum(tt,i=>i.amount),fuel=sum(tod.filter(i=>i.type==="fuel"),i=>i.amount);
   const days={};D.items.forEach(i=>{if(i.date!==t)(days[i.date]=days[i.date]||[]).push(i)});
   const past=Object.keys(days).sort().reverse(),dd=dirtyDates(),old=dd.filter(d=>d<t).length,todDirty=dd.includes(t),ob=D.outbox.length,oerr=ob&&D.outbox[0].err&&D.outbox[0].err!=="нет связи"?D.outbox[0].err:"";
-  const all=trips(),mon=all.filter(i=>i.date.slice(0,7)===t.slice(0,7)).length,mname=parse(t).toLocaleDateString("ru-RU",{month:"long"});
+  const all=trips(),debt=all.filter(i=>i.unpaid),mon=all.filter(i=>i.date.slice(0,7)===t.slice(0,7)).length,mname=parse(t).toLocaleDateString("ru-RU",{month:"long"});
   const late=new Date().getHours()>=20&&todDirty&&tod.length;
   const cl=D.closed[t],shiftTxt=dd.length?(todDirty&&tt.length?`Сегодня ${tt.length} ${pl(tt.length,RJ)} на ${fmt(earned)} ₸. `:"")+(old?`Не закрыто прошлых дней: ${old}. `:"")+(cl&&todDirty?"После закрытия появились изменения. ":"")+(waOn()?"Нажмите в конце дня: откроется WhatsApp с готовым отчётом.":tgOn()?"Нажмите в конце дня: отчёт уйдёт сам.":"Нажмите в конце дня и выберите, кому отправить."):cl?`Смена закрыта в ${timeOf(cl)}.`:"Сегодня записей ещё нет.";
   const sh=$(".sheet"),st=ui.reset?0:(sh?sh.scrollTop:0);ui.reset=false;
   document.body.classList.toggle("lock",!!ui.modal);
   $("#app").innerHTML=`<section class="total" aria-label="Всего рейсов"><span style="font-size:26px">🚛</span><span class="tl">Всего рейсов<small>${mname}: ${fmt(mon)}</small></span><b class="num">${fmt(all.length)}</b></section>
+  ${debt.length?`<button class="debt" data-a="debts"><span>Не оплатили: ${debt.length} ${pl(debt.length,RJ)}</span><span class="num">${fmt(sum(debt,i=>i.amount))} ₸ ›</span></button>`:""}
   <section class="hero" aria-label="Сегодня"><div class="when">Сегодня, ${fullDate(t)}</div>
     <div class="cnt"><b class="num">${tt.length}</b><span>${tt.length?pl(tt.length,RJ)+"<br>за сегодня":"рейсов пока<br>нет"}${pend?`<br><small style="font-size:15px;font-weight:500;opacity:.85">в плане ещё ${pend}</small>`:""}</span></div>
     <div class="sums"><div><small>Заработано</small><b class="num">${fmt(earned)} ₸</b></div><div><small>Топливо</small><b class="num">${fmt(fuel)} ₸</b></div></div></section>
@@ -249,7 +266,7 @@ function render(){
 
 const M={};
 M.plan=m=>`<h2>${m.id?"В плане":"Новый рейс в плане"}</h2>
-  <div class="fld"><label>Клиент или адрес</label><input class="inp" data-f="place" value="${esc(m.place||"")}" placeholder="Например, Айгуль или ул. Абая 5" autocomplete="off"></div>
+  <div class="fld"><label>Клиент или адрес</label><input class="inp" data-f="place" value="${esc(m.place||"")}" placeholder="Например, Айгуль или ул. Абая 5" autocomplete="off"><div class="sug" id="sug">${sugHTML(m.place)}</div></div>
   <div class="fld"><label>Когда</label><div class="chips" style="margin-top:0"><button class="chip ${m.date===td()?"on":""}" data-a="planday" data-v="today">Сегодня</button><button class="chip ${m.date===tom(td())?"on":""}" data-a="planday" data-v="tomorrow">Завтра</button></div><input class="inp" style="margin-top:8px" type="date" data-f="date" value="${esc(m.date)}"></div>
   <div class="fld"><label>Время, если назначено</label><input class="inp" type="time" data-f="time" value="${esc(m.time||"")}"></div>
   <div class="fld"><label>Сумма, если известна</label><input class="inp" type="number" inputmode="numeric" data-f="amount" value="${esc(m.amount||"")}" placeholder="0"></div>
@@ -261,6 +278,9 @@ M.shift=m=>{const dd=dirtyDates(),r=shiftReport(dd),t=td(),left=D.plans.filter(p
   <p class="hint" style="margin-top:12px">${left?`В плане осталось невыполненных: <b>${left}</b>, они перейдут на завтра. `:""}${waOn()?"Откроется WhatsApp с готовым отчётом: нажмите там «Отправить»."+(tgOn()?" Копия с файлом уйдёт в Telegram.":""):tgOn()?"Отчёт и файл уйдут в Telegram сами.":"Откроется список: выберите, кому отправить отчёт."}</p>
   <p class="err" id="err"></p>
   <div class="btns"><button class="btn" data-a="close">Отмена</button><button class="btn pri" data-a="doshift">Закрыть и отправить</button></div>`};
+M.debts=m=>{const L=trips().filter(i=>i.unpaid).sort((a,b)=>a.date.localeCompare(b.date)||a.created-b.created);return `<h2>Не оплатили</h2>
+  ${L.map(i=>`<div class="drow"><div><b>${esc(i.place||"Рейс")}</b><small>${dayLabel(i.date)} · <span class="num">${fmt(i.amount)} ₸</span></small></div><button class="btn pri" data-a="paid" data-v="${esc(i.id)}">Оплатил</button></div>`).join("")}
+  <p class="hint" style="margin-top:12px">Всего: <b class="num">${fmt(sum(L,i=>i.amount))} ₸</b></p><button class="btn w" data-a="close">Закрыть</button>`};
 M.wa=m=>`<h2>Отчёты в WhatsApp</h2>
   <p class="hint">Укажите номер WhatsApp, на который отправлять отчёты. После «Закрыть смену» откроется чат с этим номером и готовым текстом: останется нажать «Отправить».</p>
   <div class="fld"><label>Номер получателя</label><input class="inp" type="tel" inputmode="tel" data-f="phone" value="${esc(m.phone||"")}" placeholder="+7 701 123 45 67" autocomplete="off"></div>
@@ -274,11 +294,13 @@ M.tg=m=>`<h2>Автоотправка в Telegram</h2>
   <div class="btns">${tgOn()?`<button class="btn dng" style="flex:none" data-a="tgoff">Отключить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="tgsave">Проверить и включить</button></div>`;
 M.done=m=>`<h2>Рейс выполнен</h2><p class="mut" style="margin:-6px 0 14px;font-size:18px">${esc(m.place)}</p>
   <div class="fld"><label>Сумма, ₸</label><input class="inp big num" type="number" inputmode="numeric" data-f="amount" value="${esc(m.amount||"")}" placeholder="0"></div>
+  ${paidTog(m)}
   <p class="err" id="err"></p>
   <div class="btns"><button class="btn" data-a="close">Отмена</button><button class="btn pri" data-a="savedone">Готово</button></div>`;
-M.trip=m=>{const pl_=m.id?[]:recentPlaces(),am=topAmounts();return `<h2>${m.id?"Рейс":"Новый рейс"}</h2>
+M.trip=m=>{const am=topAmounts();return `<h2>${m.id?"Рейс":"Новый рейс"}</h2>
   <div class="fld"><label>Сумма, ₸</label><input class="inp big num" type="number" inputmode="numeric" data-f="amount" value="${esc(m.amount||"")}" placeholder="0">${am.length?`<div class="chips">${am.map(a=>`<button class="chip" data-a="pickamt" data-v="${a}">${fmt(a)}</button>`).join("")}</div>`:""}</div>
-  <div class="fld"><label>Клиент или адрес (если нужно)</label><input class="inp" data-f="place" value="${esc(m.place||"")}" placeholder="Например, Айгуль или ул. Абая 5" autocomplete="off">${pl_.length?`<div class="chips">${pl_.map(i=>`<button class="chip" data-a="pickplace" data-v="${esc(i.place)}">${esc(i.place)}</button>`).join("")}</div>`:""}</div>
+  <div class="fld"><label>Клиент или адрес (если нужно)</label><input class="inp" data-f="place" value="${esc(m.place||"")}" placeholder="Например, Айгуль или ул. Абая 5" autocomplete="off"><div class="sug" id="sug">${sugHTML(m.place)}</div></div>
+  ${paidTog(m)}
   <div class="two"><div class="fld"><label>День</label><input class="inp" type="date" data-f="date" value="${esc(m.date)}"></div><div class="fld"><label>Время</label><input class="inp" type="time" data-f="time" value="${esc(m.time||"")}"></div></div>
   <p class="err" id="err"></p>
   <div class="btns">${m.id?`<button class="btn dng" style="flex:none" data-a="del">Удалить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="saveitem">${m.id?"Сохранить":"Записать"}</button></div>`};
@@ -319,6 +341,10 @@ const A={
     if(!ok){err("Отправка отменена, смена не закрыта");return}
     mark();D.sentAt=Date.now();ui.modal=null;done();toast("Смена закрыта");
   },
+  setpaid(el){syncModal();ui.modal.unpaid=el.dataset.v==="0";render()},
+  debts(){open({k:"debts"})},
+  paid(el){const i=D.items.find(x=>x.id===el.dataset.v);if(!i)return;i.unpaid=false;i.paidAt=Date.now();D.dirty[td()]=1;if(!trips().some(x=>x.unpaid))ui.modal=null;done();
+    toast(`Оплачено: ${fmt(i.amount)} ₸`,"Отменить",()=>{i.unpaid=true;i.paidAt=null;done()})},
   wasetup(){open({k:"wa",phone:D.wa?"+"+D.wa:""})},
   wasave(){syncModal();let n=String(ui.modal.phone||"").replace(/\D/g,"");if(n.length===11&&n[0]==="8")n="7"+n.slice(1);if(n.length===10)n="7"+n;
     if(n.length<11||n.length>15){err("Проверьте номер: нужен полный, например +7 701 123 45 67");return}
@@ -348,7 +374,7 @@ const A={
   day(el){ui.open[el.dataset.v]=!ui.open[el.dataset.v];render()},
   newtrip(){open({k:"trip",date:td(),time:nowHM()})},
   newfuel(){open({k:"fuel",date:td(),time:nowHM()})},
-  edit(el){const i=D.items.find(x=>x.id===el.dataset.v);if(i)open({k:i.type,id:i.id,amount:i.amount,place:i.place,liters:i.liters||"",date:i.date,time:itime(i)})},
+  edit(el){const i=D.items.find(x=>x.id===el.dataset.v);if(i)open({k:i.type,id:i.id,amount:i.amount,place:i.place,liters:i.liters||"",date:i.date,time:itime(i),unpaid:!!i.unpaid})},
   newplan(){open({k:"plan",date:td()})},
   planday(el){syncModal();ui.modal.date=el.dataset.v==="today"?td():tom(td());render()},
   editplan(el){const p=D.plans.find(x=>x.id===el.dataset.v);if(p)open({k:"plan",id:p.id,place:p.place,amount:p.amount||"",date:p.date,time:p.time||""})},
@@ -364,15 +390,15 @@ const A={
     toast("Вернули в план","Отменить",()=>{if(it){D.items.push(it);p.tripId=it.id}p.done=true;done()})},
   savedone(){syncModal();const m=ui.modal,a=num(m.amount),p=D.plans.find(x=>x.id===m.planId);if(!p){A.close();return}
     if(!(a>0)){err("Введите сумму");return}
-    const it={id:uid(),created:Date.now(),type:"trip",date:td(),time:nowHM(),place:p.place,amount:a,liters:0,planId:p.id,started:p.started||null};
+    const it={id:uid(),created:Date.now(),type:"trip",date:td(),time:nowHM(),place:p.place,amount:a,liters:0,planId:p.id,started:p.started||null,unpaid:!!m.unpaid};
     D.items.push(it);p.done=true;p.tripId=it.id;ui.modal=null;done();
     toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);p.done=false;p.tripId=null;done()})},
   pickamt(el){syncModal();ui.modal.amount=el.dataset.v;render()},
-  pickplace(el){syncModal();const m=ui.modal,n=el.dataset.v,last=recentPlaces().find(i=>i.place===n);m.place=n;if(!num(m.amount)&&last)m.amount=last.amount;render()},
+  pickplace(el){syncModal();const m=ui.modal,n=el.dataset.v,p=places().find(x=>x.name===n);m.place=n;if(!num(m.amount)&&p&&p.amount)m.amount=p.amount;render()},
   saveitem(){syncModal();const m=ui.modal,a=num(m.amount);
     if(!(a>0)){err("Введите сумму");return}if(!m.date){err("Укажите день");return}
-    const rec={type:m.k,date:m.date,time:m.time||nowHM(),place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0};
-    if(m.id){const o=D.items.find(x=>x.id===m.id);if(o.date!==rec.date)D.dirty[o.date]=1;Object.assign(o,rec,{upd:Date.now()});ui.modal=null;done();toast("Сохранено");return}
+    const rec={type:m.k,date:m.date,time:m.time||nowHM(),place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0,unpaid:m.k==="trip"&&!!m.unpaid};
+    if(m.id){const o=D.items.find(x=>x.id===m.id);if(o.date!==rec.date)D.dirty[o.date]=1;if(rec.unpaid)rec.paidAt=null;else if(o.unpaid&&o.date!==td()){rec.paidAt=Date.now();D.dirty[td()]=1}Object.assign(o,rec,{upd:Date.now()});ui.modal=null;done();toast("Сохранено");return}
     const it=Object.assign({id:uid(),created:Date.now()},rec);D.items.push(it);ui.modal=null;done();
     toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);done()})},
   del(){const i=D.items.findIndex(x=>x.id===ui.modal.id);if(i<0)return;const [it]=D.items.splice(i,1),pp=D.plans.find(p=>p.tripId===it.id);D.dirty[it.date]=1;if(pp)pp.done=false;ui.modal=null;done();toast("Запись удалена","Вернуть",()=>{D.items.splice(i,0,it);if(pp)pp.done=true;done()})},
@@ -397,6 +423,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.classList&&
 setInterval(()=>{if(!ui.modal&&!drag)render()},30000);
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&ui.modal){ui.modal=null;render()}});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&td()!==ui.today){ui.today=td();render()}});
+document.addEventListener("input",e=>{if(e.target.dataset&&e.target.dataset.f==="place"){const g=$("#sug");if(g)g.innerHTML=sugHTML(e.target.value)}});
 window.addEventListener("online",flush);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")flush()});
 setInterval(flush,60000);
