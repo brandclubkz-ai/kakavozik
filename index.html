@@ -89,6 +89,14 @@ input[type=number]{-moz-appearance:textfield}
 .slide.fin .knob{color:var(--ink)}
 .send{background:#fff;border:1.5px solid var(--line);border-radius:22px;padding:16px;margin-top:22px}
 .send h3{font-size:19px;font-weight:700} .send p{font-size:15px;color:var(--mut);margin:3px 0 12px}
+.send .ok{color:var(--g);font-weight:700} .send .wait{color:var(--aink);font-weight:700}
+.send .lnk{display:block;width:100%;min-height:46px;margin-top:8px;font-size:16px;font-weight:600;color:var(--ink2);text-align:center;text-decoration:underline;text-underline-offset:3px}
+.total{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid var(--line);border-radius:20px;padding:10px 16px;margin-bottom:10px}
+.total .tl{flex:1;min-width:0;font-size:16px;font-weight:600;color:var(--ink2)} .total .tl small{display:block;font-size:14px;font-weight:500;color:var(--mut)}
+.total b{font-size:30px;font-weight:800;letter-spacing:-.03em;color:var(--g);white-space:nowrap}
+.srow{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1.5px solid var(--line);font-size:17px;font-weight:600} .srow span:last-child{text-align:right;font-weight:500;color:var(--ink2)}
+.hint{font-size:15px;color:var(--mut);margin:0 0 14px} .hint b{color:var(--ink2)}
+.steps{margin:0 0 14px 20px;font-size:15px;color:var(--ink2)} .steps li{margin-bottom:5px}
 
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom));z-index:300;background:var(--ink);color:#fff;padding:14px 18px;border-radius:16px;font-size:17px;font-weight:600;display:none;gap:16px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:92vw}
 #toast button{color:var(--am);font-weight:800;font-size:17px;min-height:34px}
@@ -134,15 +142,49 @@ const RJ=["рейс","рейса","рейсов"];
 
 let D;
 const ui={open:{},modal:null,reset:false,today:td()};
-function load(){D=LS.get(KEY)||{};D.items=D.items||[];D.sentAt=D.sentAt||null;D.plans=D.plans||[];try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch{}}
+function load(){D=LS.get(KEY)||{};D.items=D.items||[];D.sentAt=D.sentAt||null;D.plans=D.plans||[];D.closed=D.closed||{};D.dirty=D.dirty||{};D.outbox=D.outbox||[];D.tg=D.tg||null;D.wa=D.wa||null;D.last=D.last||null;try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch{}}
 function save(){if(!LS.set(KEY,D))toast("Не удалось сохранить: память телефона заполнена")}
 const done=()=>{save();render()};
 
 const trips=()=>D.items.filter(i=>i.type==="trip");
 function recentPlaces(){const seen={},out=[];trips().sort((a,b)=>b.created-a.created).forEach(i=>{const k=(i.place||"").trim().toLowerCase();if(k&&!seen[k]){seen[k]=i;out.push(i)}});return out.slice(0,8)}
 function topAmounts(){const m={};trips().forEach(i=>{m[i.amount]=(m[i.amount]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1]||b[0]-a[0]).slice(0,4).map(x=>+x[0]).sort((a,b)=>a-b)}
-const unsent=()=>D.items.filter(i=>i.created>(D.sentAt||0));
-function sendDue(){const u=unsent();if(!u.length)return 0;const first=Math.min(...u.map(i=>i.created)),days=Math.floor((Date.now()-first)/864e5);return days>=7?days:0}
+/* Смены: день считается незакрытым, если в нём есть записи новее последнего закрытия (или что-то удаляли). */
+const stamp=i=>i.upd||i.created;
+const tgOn=()=>!!(D.tg&&D.tg.token&&D.tg.chat);
+const waOn=()=>!!D.wa;
+/* Текст для WhatsApp: итоги и список записей по дням. Слишком длинный сокращаем до итогов. */
+function waText(dates,caption){
+  const L=[];dates.forEach(d=>{const it=D.items.filter(i=>i.date===d).sort((a,b)=>itime(a).localeCompare(itime(b))||a.created-b.created);if(!it.length)return;L.push("",dates.length>1?dayLabel(d)+":":"Записи:");
+    it.forEach(i=>L.push(`${itime(i)} ${i.type==="fuel"?"Заправка"+(i.liters?" "+fmt(i.liters)+" л":""):(i.place||"Рейс")}: ${i.type==="fuel"?"−":""}${fmt(i.amount)} ₸`))});
+  const full=caption+"\n"+L.join("\n");return full.length>3000?caption:full;
+}
+function waOpen(text){const q="phone="+D.wa+"&text="+encodeURIComponent(text);if(isMobile)location.href="whatsapp://send?"+q;else window.open("https://api.whatsapp.com/send?"+q,"_blank")}
+function dirtyDates(){const s=new Set(Object.keys(D.dirty)),t=td();D.items.forEach(i=>{if(stamp(i)>(D.closed[i.date]||0))s.add(i.date)});return [...s].filter(d=>d<=t).sort()}
+function dayStat(d){const L=D.items.filter(i=>i.date===d),T=L.filter(i=>i.type==="trip");return{n:T.length,earned:sum(T,i=>i.amount),fuel:sum(L.filter(i=>i.type==="fuel"),i=>i.amount)}}
+function csvText(L){
+  const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"';L=L.slice().sort((a,b)=>a.date.localeCompare(b.date)||itime(a).localeCompare(itime(b))||a.created-b.created);
+  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал"],...L.map(i=>[i.date,itime(i),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):""])];
+  return "﻿"+rows.map(r=>r.map(q).join(";")).join("\r\n");
+}
+function shiftReport(dates){
+  const st=dates.map(d=>[d,dayStat(d)]),one=dates.length===1,tot={n:sum(st,x=>x[1].n),earned:sum(st,x=>x[1].earned),fuel:sum(st,x=>x[1].fuel)};
+  let lines=[one?`🚛 Смена закрыта: ${dayLabel(dates[0])}`:`🚛 Смена закрыта, дней: ${dates.length}`];
+  if(!one)st.slice(-12).forEach(([d,s])=>lines.push(`${dayLabel(d)}: ${s.n} ${pl(s.n,RJ)}, ${fmt(s.earned)} ₸`));
+  lines.push(`Рейсов: ${tot.n}`,`Заработано: ${fmt(tot.earned)} ₸`,`Топливо: ${fmt(tot.fuel)} ₸`,`Всего рейсов за всё время: ${fmt(trips().length)}`);
+  return{caption:lines.join("\n").slice(0,1000),csv:csvText(D.items.filter(i=>dates.includes(i.date))),name:one?`reysy-${dates[0]}.csv`:`reysy-${dates[0]}_${dates[dates.length-1]}.csv`,tot};
+}
+async function tgCall(method,body,token){
+  let r;try{r=await fetch(`https://api.telegram.org/bot${token||D.tg.token}/${method}`,{method:"POST",body})}catch{throw new Error("нет связи")}
+  const j=await r.json().catch(()=>({}));if(!j.ok)throw new Error(j.description||("ошибка "+r.status));return j.result;
+}
+function tgDoc(o){const fd=new FormData();fd.append("chat_id",D.tg.chat);fd.append("caption",o.caption);fd.append("document",new Blob([o.csv],{type:"text/csv"}),o.name);return tgCall("sendDocument",fd)}
+let flushing=false;
+async function flush(){
+  if(flushing||!tgOn()||!D.outbox.length||navigator.onLine===false)return;flushing=true;let sent=0;
+  try{while(D.outbox.length){const o=D.outbox[0];try{await tgDoc(o)}catch(e){o.err=String(e.message||e);save();break}D.outbox.shift();D.sentAt=Date.now();sent++;save()}}
+  finally{flushing=false;if(sent)toast("Отчёт отправлен ✓");render()}
+}
 
 const nowHM=()=>{const d=new Date();return pad(d.getHours())+":"+pad(d.getMinutes())};
 const hm=ms=>{const d=new Date(ms);return pad(d.getHours())+":"+pad(d.getMinutes())};
@@ -176,13 +218,18 @@ function render(){
   const t=td(),tod=D.items.filter(i=>i.date===t).sort(isort),tt=tod.filter(i=>i.type==="trip");
   const pend=D.plans.filter(p=>p.date<=t&&!p.done).length,earned=sum(tt,i=>i.amount),fuel=sum(tod.filter(i=>i.type==="fuel"),i=>i.amount);
   const days={};D.items.forEach(i=>{if(i.date!==t)(days[i.date]=days[i.date]||[]).push(i)});
-  const past=Object.keys(days).sort().reverse(),due=sendDue(),un=unsent().length;
+  const past=Object.keys(days).sort().reverse(),dd=dirtyDates(),old=dd.filter(d=>d<t).length,todDirty=dd.includes(t),ob=D.outbox.length,oerr=ob&&D.outbox[0].err&&D.outbox[0].err!=="нет связи"?D.outbox[0].err:"";
+  const all=trips(),mon=all.filter(i=>i.date.slice(0,7)===t.slice(0,7)).length,mname=parse(t).toLocaleDateString("ru-RU",{month:"long"});
+  const late=new Date().getHours()>=20&&todDirty&&tod.length;
+  const cl=D.closed[t],shiftTxt=dd.length?(todDirty&&tt.length?`Сегодня ${tt.length} ${pl(tt.length,RJ)} на ${fmt(earned)} ₸. `:"")+(old?`Не закрыто прошлых дней: ${old}. `:"")+(cl&&todDirty?"После закрытия появились изменения. ":"")+(waOn()?"Нажмите в конце дня: откроется WhatsApp с готовым отчётом.":tgOn()?"Нажмите в конце дня: отчёт уйдёт сам.":"Нажмите в конце дня и выберите, кому отправить."):cl?`Смена закрыта в ${timeOf(cl)}.`:"Сегодня записей ещё нет.";
   const sh=$(".sheet"),st=ui.reset?0:(sh?sh.scrollTop:0);ui.reset=false;
   document.body.classList.toggle("lock",!!ui.modal);
-  $("#app").innerHTML=`<section class="hero" aria-label="Сегодня"><div class="when">Сегодня, ${fullDate(t)}</div>
+  $("#app").innerHTML=`<section class="total" aria-label="Всего рейсов"><span style="font-size:26px">🚛</span><span class="tl">Всего рейсов<small>${mname}: ${fmt(mon)}</small></span><b class="num">${fmt(all.length)}</b></section>
+  <section class="hero" aria-label="Сегодня"><div class="when">Сегодня, ${fullDate(t)}</div>
     <div class="cnt"><b class="num">${tt.length}</b><span>${tt.length?pl(tt.length,RJ)+"<br>за сегодня":"рейсов пока<br>нет"}${pend?`<br><small style="font-size:15px;font-weight:500;opacity:.85">в плане ещё ${pend}</small>`:""}</span></div>
     <div class="sums"><div><small>Заработано</small><b class="num">${fmt(earned)} ₸</b></div><div><small>Топливо</small><b class="num">${fmt(fuel)} ₸</b></div></div></section>
-  ${due?`<div class="banner"><span>📤</span><span style="flex:1">Данные не отправляли ${due} ${pl(due,["день","дня","дней"])}</span><button class="btn" data-a="send">Отправить</button></div>`:""}
+  ${ob?`<div class="banner"><span>${oerr?"⚠️":"📶"}</span><span style="flex:1">${oerr?"Отчёт не ушёл: "+esc(oerr):"Нет связи. Отчёт отправится сам"}</span><button class="btn" data-a="${oerr?"tgsetup":"retry"}">${oerr?"Настроить":"Повторить"}</button></div>`:""}
+  ${old||late?`<div class="banner"><span>🔒</span><span style="flex:1">${old?`Не закрыта смена: ${old} ${pl(old,["день","дня","дней"])}`:"Конец дня? Закройте смену"}</span><button class="btn" data-a="shift">Закрыть</button></div>`:""}
   ${nextCard(t)}
   <button class="btn pri add" data-a="newtrip">＋ Записать рейс</button>
   ${planBlock(t)}
@@ -190,7 +237,12 @@ function render(){
   ${tod.length?`<div class="list">${tod.map(row).join("")}</div>`:`<div class="empty"><b>Сегодня записей нет</b>Нажмите «Записать рейс», когда выполните первый</div>`}
   ${past.length?`<div class="sect">Раньше</div>${past.map(d=>{const L=days[d].sort(isort),n=L.filter(i=>i.type==="trip").length,o=ui.open[d];
     return `<button class="dayrow ${o?"open":""}" data-a="day" data-v="${d}" aria-expanded="${!!o}"><span>${dayLabel(d)}</span><span>${n} ${pl(n,RJ)} · ${fmt(sum(L.filter(i=>i.type==="trip"),i=>i.amount))} ₸<i>›</i></span></button>${o?`<div class="list">${L.map(row).join("")}</div>`:""}`}).join("")}`:""}
-  <div class="send"><h3>Отправить данные</h3><p>${D.sentAt?`Последний раз отправляли ${new Date(D.sentAt).toLocaleDateString("ru-RU",{day:"numeric",month:"long"})}. Новых записей: ${un}.`:`Ещё не отправляли. Записей: ${D.items.length}.`} Откроется список: выберите WhatsApp, Telegram или почту.</p><button class="btn pri w" data-a="send">📤 Отправить данные</button></div>
+  <div class="send"><h3>Конец дня</h3><p>${shiftTxt}${!dd.length&&cl?(ob?` <span class="wait">Отчёт ждёт связи.</span>`:tgOn()||!waOn()?` <span class="ok">Отчёт отправлен ✓</span>`:""):""}</p>
+    ${dd.length?`<button class="btn pri w" data-a="shift">🔒 Закрыть смену</button>`:""}
+    ${!dd.length&&cl&&waOn()&&D.last?`<button class="btn w" data-a="waresend">Отправить отчёт в WhatsApp ещё раз</button>`:""}
+    <button class="lnk" data-a="wasetup">${waOn()?`Отчёты в WhatsApp: +${esc(D.wa)}`:"Настроить отправку в WhatsApp"}</button>
+    <button class="lnk" style="margin-top:0" data-a="tgsetup">${tgOn()?`Автоотправка в Telegram: включена${D.tg.name?" ("+esc(D.tg.name)+")":""}`:"Настроить автоотправку в Telegram"}</button>
+    <button class="lnk" style="margin-top:0" data-a="send">Выгрузить все записи файлом</button></div>
   ${ui.modal?`<div class="ov" data-a="close"><div class="sheet" role="dialog" aria-modal="true">${M[ui.modal.k](ui.modal)}</div></div>`:""}`;
   if(ui.modal){const n=$(".sheet");if(n)n.scrollTop=st}
 }
@@ -203,6 +255,23 @@ M.plan=m=>`<h2>${m.id?"В плане":"Новый рейс в плане"}</h2>
   <div class="fld"><label>Сумма, если известна</label><input class="inp" type="number" inputmode="numeric" data-f="amount" value="${esc(m.amount||"")}" placeholder="0"></div>
   <p class="err" id="err"></p>
   <div class="btns">${m.id?`<button class="btn dng" style="flex:none" data-a="delplan">Удалить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="saveplan">${m.id?"Сохранить":"Добавить"}</button></div>`;
+M.shift=m=>{const dd=dirtyDates(),r=shiftReport(dd),t=td(),left=D.plans.filter(p=>p.date<=t&&!p.done).length;return `<h2>Закрыть смену</h2>
+  ${dd.slice(-10).map(d=>{const s=dayStat(d);return `<div class="srow"><span>${d===t?"Сегодня":dayLabel(d)}</span><span class="num">${s.n} ${pl(s.n,RJ)} · ${fmt(s.earned)} ₸${s.fuel?`<br>топливо ${fmt(s.fuel)} ₸`:""}</span></div>`}).join("")}
+  ${dd.length>1?`<div class="srow"><span>Итого${dd.length>10?`, дней: ${dd.length}`:""}</span><span class="num">${r.tot.n} ${pl(r.tot.n,RJ)} · ${fmt(r.tot.earned)} ₸</span></div>`:""}
+  <p class="hint" style="margin-top:12px">${left?`В плане осталось невыполненных: <b>${left}</b>, они перейдут на завтра. `:""}${waOn()?"Откроется WhatsApp с готовым отчётом: нажмите там «Отправить»."+(tgOn()?" Копия с файлом уйдёт в Telegram.":""):tgOn()?"Отчёт и файл уйдут в Telegram сами.":"Откроется список: выберите, кому отправить отчёт."}</p>
+  <p class="err" id="err"></p>
+  <div class="btns"><button class="btn" data-a="close">Отмена</button><button class="btn pri" data-a="doshift">Закрыть и отправить</button></div>`};
+M.wa=m=>`<h2>Отчёты в WhatsApp</h2>
+  <p class="hint">Укажите номер WhatsApp, на который отправлять отчёты. После «Закрыть смену» откроется чат с этим номером и готовым текстом: останется нажать «Отправить».</p>
+  <div class="fld"><label>Номер получателя</label><input class="inp" type="tel" inputmode="tel" data-f="phone" value="${esc(m.phone||"")}" placeholder="+7 701 123 45 67" autocomplete="off"></div>
+  <p class="err" id="err"></p>
+  <div class="btns">${waOn()?`<button class="btn dng" style="flex:none" data-a="waoff">Отключить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="wasave">Сохранить</button></div>`;
+M.tg=m=>`<h2>Автоотправка в Telegram</h2>
+  <ol class="steps"><li>В Telegram откройте <b>@BotFather</b>, отправьте /newbot и получите токен бота.</li><li>С телефона получателя откройте своего бота и нажмите «Старт».</li><li>Вставьте токен сюда и нажмите «Найти получателя».</li></ol>
+  <div class="fld"><label>Токен бота</label><input class="inp" style="font-size:16px" data-f="token" value="${esc(m.token||"")}" placeholder="123456789:AA..." autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+  <div class="fld"><label>Получатель (chat id)${m.name?": "+esc(m.name):""}</label><div style="display:flex;gap:8px"><input class="inp" style="flex:1" inputmode="numeric" data-f="chat" value="${esc(m.chat||"")}" placeholder="например 123456789" autocomplete="off"><button class="btn" style="flex:none" data-a="tgfind">Найти получателя</button></div></div>
+  <p class="err" id="err"></p>
+  <div class="btns">${tgOn()?`<button class="btn dng" style="flex:none" data-a="tgoff">Отключить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="tgsave">Проверить и включить</button></div>`;
 M.done=m=>`<h2>Рейс выполнен</h2><p class="mut" style="margin:-6px 0 14px;font-size:18px">${esc(m.place)}</p>
   <div class="fld"><label>Сумма, ₸</label><input class="inp big num" type="number" inputmode="numeric" data-f="amount" value="${esc(m.amount||"")}" placeholder="0"></div>
   <p class="err" id="err"></p>
@@ -226,12 +295,55 @@ const err=s=>{const e=$("#err");if(e)e.textContent=s};
 const open=m=>{ui.modal=m;ui.reset=true;render()};
 const syncModal=()=>{if(!ui.modal)return;document.querySelectorAll(".sheet [data-f]").forEach(el=>{ui.modal[el.dataset.f]=el.value})};
 const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
-function csvFile(){
-  const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"',L=D.items.slice().sort((a,b)=>a.date.localeCompare(b.date)||itime(a).localeCompare(itime(b))||a.created-b.created);
-  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал"],...L.map(i=>[i.date,itime(i),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):""])];
-  return new Blob(["﻿"+rows.map(r=>r.map(q).join(";")).join("\r\n")],{type:"text/csv;charset=utf-8"});
+const csvFile=()=>new Blob([csvText(D.items)],{type:"text/csv;charset=utf-8"});
+/* Отдать файл через «Поделиться» (телефон) или скачать (компьютер). false, если человек отменил. */
+async function shareFile(blob,name,text){
+  try{const f=new File([blob],name,{type:blob.type});
+    if(isMobile&&navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f],title:"Рейсы",text});
+    else{const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}}
+  catch(e){if(e&&e.name==="AbortError")return false}
+  return true;
 }
+let busy=false;
 const A={
+  shift(){if(!dirtyDates().length){toast("Смена уже закрыта");return}open({k:"shift"})},
+  async doshift(){
+    if(busy)return;const dd=dirtyDates();if(!dd.length){A.close();return}
+    const r=shiftReport(dd),mark=()=>{const n=Date.now();dd.forEach(d=>{D.closed[d]=n;delete D.dirty[d]})};
+    if(tgOn()||waOn()){const wt=waOn()?waText(dd,r.caption):"";mark();
+      if(tgOn())D.outbox.push({id:uid(),created:Date.now(),caption:r.caption,csv:r.csv,name:r.name});
+      if(wt)D.last={text:wt,at:Date.now()};ui.modal=null;done();
+      toast(wt?"Смена закрыта. Нажмите «Отправить» в WhatsApp":navigator.onLine===false?"Смена закрыта. Отчёт уйдёт, когда появится связь":"Смена закрыта, отправляю…");
+      if(wt)waOpen(wt);flush();return}
+    busy=true;const ok=await shareFile(new Blob([r.csv],{type:"text/csv;charset=utf-8"}),r.name,r.caption);busy=false;
+    if(!ok){err("Отправка отменена, смена не закрыта");return}
+    mark();D.sentAt=Date.now();ui.modal=null;done();toast("Смена закрыта");
+  },
+  wasetup(){open({k:"wa",phone:D.wa?"+"+D.wa:""})},
+  wasave(){syncModal();let n=String(ui.modal.phone||"").replace(/\D/g,"");if(n.length===11&&n[0]==="8")n="7"+n.slice(1);if(n.length===10)n="7"+n;
+    if(n.length<11||n.length>15){err("Проверьте номер: нужен полный, например +7 701 123 45 67");return}
+    D.wa=n;ui.modal=null;done();toast("Отчёты будут открываться в WhatsApp")},
+  waoff(){D.wa=null;D.last=null;ui.modal=null;done();toast("WhatsApp отключён")},
+  waresend(){if(D.last&&waOn())waOpen(D.last.text)},
+  retry(){if(navigator.onLine===false){toast("Интернета пока нет");return}flush()},
+  tgsetup(){const g=D.tg||{};open({k:"tg",token:g.token||"",chat:g.chat||"",name:g.name||""})},
+  async tgfind(){
+    syncModal();const m=ui.modal,tk=(m.token||"").trim();if(!tk){err("Сначала вставьте токен бота");return}
+    err("Ищу…");
+    try{const up=await tgCall("getUpdates",null,tk),c=up.map(u=>(u.message||u.edited_message||{}).chat).filter(c=>c&&c.type==="private").pop();
+      if(!c){err("Никто ещё не писал боту. Нажмите «Старт» в боте с телефона получателя и повторите");return}
+      if(ui.modal!==m)return;m.chat=String(c.id);m.name=[c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||"";render()}
+    catch(e){err("Не получилось: "+(e.message||e))}
+  },
+  async tgsave(){
+    syncModal();const m=ui.modal,tk=(m.token||"").trim(),ch=(m.chat||"").trim();
+    if(!tk){err("Вставьте токен бота");return}if(!ch){err("Укажите получателя");return}
+    err("Проверяю…");
+    try{const fd=new FormData();fd.append("chat_id",ch);fd.append("text","✅ Рейсы: автоотправка подключена. Сюда будут приходить отчёты о закрытых сменах.");await tgCall("sendMessage",fd,tk)}
+    catch(e){err("Не получилось: "+(e.message||e));return}
+    D.tg={token:tk,chat:ch,name:m.name||""};D.outbox.forEach(o=>delete o.err);ui.modal=null;done();toast("Автоотправка включена");flush();
+  },
+  tgoff(){D.tg=null;ui.modal=null;done();toast("Автоотправка отключена")},
   close(){ui.modal=null;render()},
   day(el){ui.open[el.dataset.v]=!ui.open[el.dataset.v];render()},
   newtrip(){open({k:"trip",date:td(),time:nowHM()})},
@@ -248,7 +360,7 @@ const A={
   delplan(){const i=D.plans.findIndex(x=>x.id===ui.modal.id);if(i<0)return;const [p]=D.plans.splice(i,1);ui.modal=null;done();toast("Удалено из плана","Вернуть",()=>{D.plans.splice(i,0,p);done()})},
   tick(el){const p=D.plans.find(x=>x.id===el.dataset.v);if(!p)return;
     if(!p.done){open({k:"done",planId:p.id,place:p.place,amount:p.amount||""});return}
-    const ti=D.items.findIndex(x=>x.id===p.tripId),it=ti>=0?D.items.splice(ti,1)[0]:null;p.done=false;p.tripId=null;p.started=null;done();
+    const ti=D.items.findIndex(x=>x.id===p.tripId),it=ti>=0?D.items.splice(ti,1)[0]:null;if(it)D.dirty[it.date]=1;p.done=false;p.tripId=null;p.started=null;done();
     toast("Вернули в план","Отменить",()=>{if(it){D.items.push(it);p.tripId=it.id}p.done=true;done()})},
   savedone(){syncModal();const m=ui.modal,a=num(m.amount),p=D.plans.find(x=>x.id===m.planId);if(!p){A.close();return}
     if(!(a>0)){err("Введите сумму");return}
@@ -260,18 +372,14 @@ const A={
   saveitem(){syncModal();const m=ui.modal,a=num(m.amount);
     if(!(a>0)){err("Введите сумму");return}if(!m.date){err("Укажите день");return}
     const rec={type:m.k,date:m.date,time:m.time||nowHM(),place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0};
-    if(m.id){Object.assign(D.items.find(x=>x.id===m.id),rec);ui.modal=null;done();toast("Сохранено");return}
+    if(m.id){const o=D.items.find(x=>x.id===m.id);if(o.date!==rec.date)D.dirty[o.date]=1;Object.assign(o,rec,{upd:Date.now()});ui.modal=null;done();toast("Сохранено");return}
     const it=Object.assign({id:uid(),created:Date.now()},rec);D.items.push(it);ui.modal=null;done();
     toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);done()})},
-  del(){const i=D.items.findIndex(x=>x.id===ui.modal.id);if(i<0)return;const [it]=D.items.splice(i,1),pp=D.plans.find(p=>p.tripId===it.id);if(pp)pp.done=false;ui.modal=null;done();toast("Запись удалена","Вернуть",()=>{D.items.splice(i,0,it);if(pp)pp.done=true;done()})},
+  del(){const i=D.items.findIndex(x=>x.id===ui.modal.id);if(i<0)return;const [it]=D.items.splice(i,1),pp=D.plans.find(p=>p.tripId===it.id);D.dirty[it.date]=1;if(pp)pp.done=false;ui.modal=null;done();toast("Запись удалена","Вернуть",()=>{D.items.splice(i,0,it);if(pp)pp.done=true;done()})},
   async send(){
     if(!D.items.length){toast("Пока нечего отправлять");return}
-    const blob=csvFile(),name=`reysy-${td()}.csv`;let ok=true;
-    try{const f=new File([blob],name,{type:blob.type});
-      if(isMobile&&navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f],title:"Рейсы",text:"Данные по рейсам"});
-      else{const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}}
-    catch(e){if(e&&e.name==="AbortError")ok=false}
-    if(ok){D.sentAt=Date.now();done();toast("Данные отправлены")}
+    const ok=await shareFile(csvFile(),`reysy-vse-${td()}.csv`,"Все записи по рейсам");
+    if(ok){D.sentAt=Date.now();done();toast("Файл готов")}
   }
 };
 document.addEventListener("click",e=>{const el=e.target.closest("[data-a]");if(!el)return;if(el.classList.contains("ov")&&e.target!==el)return;const f=A[el.dataset.a];if(f)f(el)});
@@ -289,7 +397,10 @@ document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.classList&&
 setInterval(()=>{if(!ui.modal&&!drag)render()},30000);
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&ui.modal){ui.modal=null;render()}});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&td()!==ui.today){ui.today=td();render()}});
-load();render();
+window.addEventListener("online",flush);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")flush()});
+setInterval(flush,60000);
+load();render();flush();
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"))navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>

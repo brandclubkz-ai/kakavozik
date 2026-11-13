@@ -1,7 +1,7 @@
 /* Учёт рейсов: работа без интернета.
    Сначала пробуем сеть (обновления приходят сразу), без сети отдаём сохранённую копию.
    Трогает только свой кэш "rl-". */
-const CACHE = "rl-v1";
+const CACHE = "rl-v3";
 self.addEventListener("install", e => {
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(["./", "index.html", "manifest.json", "icon-192.png", "icon-512.png", "icon-180.png"]).catch(() => {})));
