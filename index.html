@@ -161,12 +161,52 @@ function topAmounts(){const m={};trips().forEach(i=>{m[i.amount]=(m[i.amount]||0
 function places(){const m={};[...trips(),...D.plans.filter(p=>!p.tripId)].forEach(i=>{const n=(i.place||"").trim(),k=n.toLowerCase();if(!k)return;const o=m[k]||(m[k]={name:n,n:0,last:0,la:0,amount:0});o.n++;if(i.created>=o.last){o.last=i.created;o.name=n}if(i.amount&&i.created>=o.la){o.la=i.created;o.amount=i.amount}});return Object.values(m).sort((a,b)=>b.n-a.n||b.last-a.last)}
 function sugHTML(q){q=(q||"").trim().toLowerCase();return places().filter(p=>p.name.toLowerCase()!==q&&(!q||p.name.toLowerCase().includes(q))).slice(0,5).map(p=>`<button class="sgi" data-a="pickplace" data-v="${esc(p.name)}"><b>${esc(p.name)}</b><span class="num">${p.n>1?p.n+" "+pl(p.n,["раз","раза","раз"])+(p.amount?" · ":""):""}${p.amount?fmt(p.amount)+" ₸":""}</span></button>`).join("")}
 /* Способ оплаты рейса: pay = "kaspi" | "cash"; unpaid = ещё не заплатил. */
-const PAY={kaspi:"Каспи",cash:"Наличные"};
-const payTxt=i=>i.type==="fuel"?"":i.unpaid?"не оплачено":(PAY[i.pay]||"оплачено")+(i.paidAt?" (позже)":"");
+const PAY={kaspi:"Каспи",cash:"Наличные",mix:"Каспи + нал"};
+/* Сколько пришло на Каспи и наличными по одному рейсу */
+const split=i=>i.pay==="kaspi"?[i.amount,0]:i.pay==="cash"?[0,i.amount]:i.pay==="mix"?[i.kaspi||0,i.amount-(i.kaspi||0)]:[0,0];
+const mixTxt=i=>`Каспи ${fmt(split(i)[0])} + нал ${fmt(split(i)[1])}`;
+const payTxt=i=>i.type==="fuel"?"":i.unpaid?"не оплачено":(i.pay==="mix"?mixTxt(i):PAY[i.pay]||"оплачено")+(i.paidAt?" (позже)":"");
 const recvDay=i=>i.paidAt?iso(new Date(i.paidAt)):i.date;
-function recv(dates){const L=trips().filter(i=>!i.unpaid&&dates.includes(recvDay(i)));return{kaspi:sum(L.filter(i=>i.pay==="kaspi"),i=>i.amount),cash:sum(L.filter(i=>i.pay==="cash"),i=>i.amount),none:sum(L.filter(i=>!PAY[i.pay]),i=>i.amount)}}
+function recv(dates){const L=trips().filter(i=>!i.unpaid&&dates.includes(recvDay(i)));return{kaspi:sum(L,i=>split(i)[0]),cash:sum(L,i=>split(i)[1]),none:sum(L.filter(i=>!PAY[i.pay]),i=>i.amount)}}
 const paidTog=m=>{const c=(v,t)=>`<button class="chip ${!m.unpaid&&m.pay===v?"on":""}" data-a="setpay" data-v="${v}">${t}</button>`;
-  return `<div class="fld"><label>Оплата</label><div class="chips" style="margin-top:0">${c("kaspi","Каспи")}${c("cash","Наличные")}<button class="chip ${m.unpaid?"on no":""}" data-a="setpay" data-v="no">Не оплатил</button></div></div>`};
+  const mx=!m.unpaid&&m.pay==="mix";
+  return `<div class="fld"><label>Оплата</label><div class="chips" style="margin-top:0">${c("kaspi","Каспи")}${c("cash","Наличные")}${c("mix","Каспи + нал")}<button class="chip ${m.unpaid?"on no":""}" data-a="setpay" data-v="no">Не оплатил</button></div></div>
+  ${mx?`<div class="fld"><label>Из них на Каспи, ₸</label><input class="inp num" type="number" inputmode="numeric" data-f="kaspi" value="${esc(m.kaspi||"")}" placeholder="0"><p class="hint" id="mixrest" style="margin:6px 0 0">${mixRest(m)}</p></div>`:""}`};
+function mixRest(m){const a=num(m.amount),k=num(m.kaspi);return a>0&&k>0&&k<a?`Наличными: <b class="num">${fmt(a-k)} ₸</b>`:"Остальное посчитается как наличные"}
+function payErr(m){if(m.unpaid)return"";if(!PAY[m.pay])return"Отметьте оплату: Каспи, наличные, Каспи + нал или не оплатил";
+  if(m.pay==="mix"){const a=num(m.amount),k=num(m.kaspi);if(!(k>0&&k<a))return"Для «Каспи + нал» укажите, сколько пришло на Каспи: больше нуля и меньше всей суммы"}return""}
+const payRec=m=>m.unpaid?{pay:"",kaspi:0}:{pay:m.pay||"",kaspi:m.pay==="mix"?num(m.kaspi):0};
+/* Загрузка записей из файла CSV, который выгрузило это же приложение. Повторы пропускаются. */
+function csvParse(t){t=t.replace(/^\ufeff/,"");const rows=[];let r=[],f="",q=false;
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+    else if(c==='"')q=true;else if(c===";"||c===","&&!t.slice(0,t.indexOf("\n")).includes(";")){r.push(f);f=""}
+    else if(c==="\n"){r.push(f.replace(/\r$/,""));rows.push(r);r=[];f=""}else f+=c}
+  if(f||r.length){r.push(f);rows.push(r)}return rows.filter(x=>x.some(y=>y.trim()))}
+function importCSV(text){
+  const rows=csvParse(text);if(!rows.length)throw new Error("файл пустой");
+  const H=rows[0].map(h=>h.trim().toLowerCase()),ix=n=>H.indexOf(n);
+  const c={d:ix("день"),t:ix("время"),w:ix("что"),p:ix("клиент или адрес"),a:ix("сумма"),l:ix("литры"),s:ix("выехал"),o:ix("оплата"),k:ix("каспи"),n:ix("наличные")};
+  if(c.d<0||c.a<0||c.w<0)throw new Error("это не файл из приложения «Рейсы»");
+  const N=v=>Number(String(v||"").replace(/\s/g,"").replace(",","."))||0;
+  const key=i=>[i.type,i.date,itime(i),(i.place||"").trim().toLowerCase(),i.amount].join("|");
+  const have=new Set(D.items.map(key)),busyDays=new Set(D.items.map(i=>i.date)),added=[];let skip=0;
+  rows.slice(1).forEach(r=>{
+    let d=(r[c.d]||"").trim();const m=d.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);if(m)d=`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return;
+    const type=/запр/i.test(r[c.w]||"")?"fuel":"trip",time=((r[c.t]||"").trim().match(/^\d{1,2}:\d{2}/)||[""])[0].padStart(5,"0"),amount=N(r[c.a]);if(!(amount>0))return;
+    const o=(c.o>=0?r[c.o]:"")||"",lo=o.toLowerCase(),it={type,date:d,time:time||"12:00",place:type==="trip"?(r[c.p]||"").trim():"",amount,liters:type==="fuel"&&c.l>=0?N(r[c.l]):0,pay:"",kaspi:0};
+    if(type==="trip"){
+      if(lo.includes("не оплач"))it.unpaid=true;
+      else{const k=c.k>=0?N(r[c.k]):0,n=c.n>=0?N(r[c.n]):0;
+        if(k&&n){it.pay="mix";it.kaspi=k}else if(k||lo.startsWith("каспи"))it.pay="kaspi";else if(n||lo.startsWith("налич"))it.pay="cash";
+        if(lo.includes("позже"))it.paidAt=new Date(d+"T"+it.time).getTime()}}
+    if(have.has(key(it))){skip++;return}have.add(key(it));
+    it.id=uid();it.created=new Date(d+"T"+it.time).getTime()||Date.now();added.push(it)});
+  const n=Date.now(),t=td();added.forEach(i=>D.items.push(i));
+  new Set(added.map(i=>i.date)).forEach(d=>{if(d<t&&!busyDays.has(d))D.closed[d]=n});
+  return{added:added.length,skip};
+}
 /* Смены: день считается незакрытым, если в нём есть записи новее последнего закрытия (или что-то удаляли). */
 const stamp=i=>i.upd||i.created;
 const tgOn=()=>!!(D.tg&&D.tg.token&&D.tg.chat);
@@ -174,7 +214,7 @@ const waOn=()=>!!D.wa;
 /* Текст для WhatsApp: итоги и список записей по дням. Слишком длинный сокращаем до итогов. */
 function waText(dates,caption){
   const L=[];dates.forEach(d=>{const it=D.items.filter(i=>i.date===d).sort((a,b)=>itime(a).localeCompare(itime(b))||a.created-b.created);if(!it.length)return;L.push("",dates.length>1?dayLabel(d)+":":"Записи:");
-    it.forEach(i=>L.push(`${itime(i)} ${i.type==="fuel"?"Заправка"+(i.liters?" "+fmt(i.liters)+" л":""):(i.place||"Рейс")}: ${i.type==="fuel"?"−":""}${fmt(i.amount)} ₸${i.type==="fuel"?"":i.unpaid?" (не оплатил)":i.pay==="kaspi"?" (Каспи)":i.pay==="cash"?" (нал)":""}`))});
+    it.forEach(i=>L.push(`${itime(i)} ${i.type==="fuel"?"Заправка"+(i.liters?" "+fmt(i.liters)+" л":""):(i.place||"Рейс")}: ${i.type==="fuel"?"−":""}${fmt(i.amount)} ₸${i.type==="fuel"?"":i.unpaid?" (не оплатил)":i.pay==="kaspi"?" (Каспи)":i.pay==="cash"?" (нал)":i.pay==="mix"?` (${mixTxt(i)})`:""}`))});
   const full=caption+"\n"+L.join("\n");return full.length>3000?caption:full;
 }
 function waOpen(text){const q="phone="+D.wa+"&text="+encodeURIComponent(text);if(isMobile)location.href="whatsapp://send?"+q;else window.open("https://api.whatsapp.com/send?"+q,"_blank")}
@@ -182,7 +222,7 @@ function dirtyDates(){const s=new Set(Object.keys(D.dirty)),t=td();D.items.forEa
 function dayStat(d){const L=D.items.filter(i=>i.date===d),T=L.filter(i=>i.type==="trip");return{n:T.length,earned:sum(T,i=>i.amount),fuel:sum(L.filter(i=>i.type==="fuel"),i=>i.amount)}}
 function csvText(L){
   const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"';L=L.slice().sort((a,b)=>a.date.localeCompare(b.date)||itime(a).localeCompare(itime(b))||a.created-b.created);
-  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал","Оплата"],...L.map(i=>[i.date,itime(i),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):"",payTxt(i)])];
+  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал","Оплата","Каспи","Наличные"],...L.map(i=>[i.date,itime(i),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):"",payTxt(i),...(i.type==="trip"&&!i.unpaid&&PAY[i.pay]?split(i):["",""])])];
   return "﻿"+rows.map(r=>r.map(q).join(";")).join("\r\n");
 }
 function shiftReport(dates){
@@ -298,7 +338,8 @@ function render(){
     <button class="lnk" data-a="gssetup">${gsOn()?(gerr?"Google Таблица: ошибка, нажмите":gn?`Google Таблица: ждут отправки ${gn}`:"Google Таблица: всё отправлено ✓"):"Настроить выгрузку в Google Таблицу"}</button>
     <button class="lnk" style="margin-top:0" data-a="wasetup">${waOn()?`Отчёты в WhatsApp: +${esc(D.wa)}`:"Настроить отправку в WhatsApp"}</button>
     <button class="lnk" style="margin-top:0" data-a="tgsetup">${tgOn()?`Автоотправка в Telegram: включена${D.tg.name?" ("+esc(D.tg.name)+")":""}`:"Настроить автоотправку в Telegram"}</button>
-    <button class="lnk" style="margin-top:0" data-a="send">Выгрузить все записи файлом</button></div>
+    <button class="lnk" style="margin-top:0" data-a="send">Выгрузить все записи файлом</button>
+    <button class="lnk" style="margin-top:0" data-a="imp">Загрузить записи из файла</button></div>
   ${ui.modal?`<div class="ov" data-a="close"><div class="sheet" role="dialog" aria-modal="true">${M[ui.modal.k](ui.modal)}</div></div>`:""}`;
   if(ui.modal){const n=$(".sheet");if(n)n.scrollTop=st}
 }
@@ -400,6 +441,11 @@ const A={
     if(!gsOn()||D.gs.url!==u)D.gsDone={};D.gs={url:u};ui.modal=null;done();toast("Таблица подключена, отправляю записи");gsSync();
   },
   gsoff(){D.gs=null;D.gsDone={};ui.modal=null;done();toast("Выгрузка в таблицу отключена")},
+  imp(){const inp=document.createElement("input");inp.type="file";inp.accept=".csv,text/csv,text/plain,text/comma-separated-values";
+    inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;const r=new FileReader();
+      r.onload=()=>{try{const x=importCSV(String(r.result));done();toast(x.added?`Добавлено записей: ${x.added}`+(x.skip?`, повторов пропущено: ${x.skip}`:""):x.skip?`Все ${x.skip} записей уже есть`:"В файле нет записей")}catch(e){toast("Не получилось: "+(e.message||e))}};
+      r.readAsText(f,"utf-8")};
+    document.body.appendChild(inp);inp.style.display="none";inp.click();setTimeout(()=>inp.remove(),60000)},
   wasetup(){open({k:"wa",phone:D.wa?"+"+D.wa:""})},
   wasave(){syncModal();let n=String(ui.modal.phone||"").replace(/\D/g,"");if(n.length===11&&n[0]==="8")n="7"+n.slice(1);if(n.length===10)n="7"+n;
     if(n.length<11||n.length>15){err("Проверьте номер: нужен полный, например +7 701 123 45 67");return}
@@ -429,7 +475,7 @@ const A={
   day(el){ui.open[el.dataset.v]=!ui.open[el.dataset.v];render()},
   newtrip(){open({k:"trip",date:td(),time:nowHM()})},
   newfuel(){open({k:"fuel",date:td(),time:nowHM()})},
-  edit(el){const i=D.items.find(x=>x.id===el.dataset.v);if(i)open({k:i.type,id:i.id,amount:i.amount,place:i.place,liters:i.liters||"",date:i.date,time:itime(i),unpaid:!!i.unpaid,pay:i.pay||"",hadPay:!!i.pay,wasUnpaid:!!i.unpaid})},
+  edit(el){const i=D.items.find(x=>x.id===el.dataset.v);if(i)open({k:i.type,id:i.id,amount:i.amount,place:i.place,liters:i.liters||"",date:i.date,time:itime(i),unpaid:!!i.unpaid,pay:i.pay||"",kaspi:i.kaspi||"",hadPay:!!i.pay,wasUnpaid:!!i.unpaid})},
   newplan(){open({k:"plan",date:td()})},
   planday(el){syncModal();ui.modal.date=el.dataset.v==="today"?td():tom(td());render()},
   editplan(el){const p=D.plans.find(x=>x.id===el.dataset.v);if(p)open({k:"plan",id:p.id,place:p.place,amount:p.amount||"",date:p.date,time:p.time||""})},
@@ -444,16 +490,16 @@ const A={
     const ti=D.items.findIndex(x=>x.id===p.tripId),it=ti>=0?D.items.splice(ti,1)[0]:null;if(it)D.dirty[it.date]=1;p.done=false;p.tripId=null;p.started=null;done();
     toast("Вернули в план","Отменить",()=>{if(it){D.items.push(it);p.tripId=it.id}p.done=true;done()})},
   savedone(){syncModal();const m=ui.modal,a=num(m.amount),p=D.plans.find(x=>x.id===m.planId);if(!p){A.close();return}
-    if(!(a>0)){err("Введите сумму");return}if(!m.unpaid&&!PAY[m.pay]){err("Отметьте оплату: Каспи, наличные или не оплатил");return}
-    const it={id:uid(),created:Date.now(),type:"trip",date:td(),time:nowHM(),place:p.place,amount:a,liters:0,planId:p.id,started:p.started||null,unpaid:!!m.unpaid,pay:m.unpaid?"":m.pay};
+    if(!(a>0)){err("Введите сумму");return}{const e=payErr(m);if(e){err(e);return}}
+    const it={id:uid(),created:Date.now(),type:"trip",date:td(),time:nowHM(),place:p.place,amount:a,liters:0,planId:p.id,started:p.started||null,unpaid:!!m.unpaid,...payRec(m)};
     D.items.push(it);p.done=true;p.tripId=it.id;ui.modal=null;done();
     toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);p.done=false;p.tripId=null;done()})},
   pickamt(el){syncModal();ui.modal.amount=el.dataset.v;render()},
   pickplace(el){syncModal();const m=ui.modal,n=el.dataset.v,p=places().find(x=>x.name===n);m.place=n;if(!num(m.amount)&&p&&p.amount)m.amount=p.amount;render()},
   saveitem(){syncModal();const m=ui.modal,a=num(m.amount);
     if(!(a>0)){err("Введите сумму");return}if(!m.date){err("Укажите день");return}
-    if(m.k==="trip"&&!m.unpaid&&!PAY[m.pay]&&(!m.id||m.hadPay||m.wasUnpaid)){err("Отметьте оплату: Каспи, наличные или не оплатил");return}
-    const rec={type:m.k,date:m.date,time:m.time||nowHM(),place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0,unpaid:m.k==="trip"&&!!m.unpaid,pay:m.k==="trip"&&!m.unpaid?(m.pay||""):""};
+    if(m.k==="trip"&&(PAY[m.pay]||m.unpaid||!m.id||m.hadPay||m.wasUnpaid)){const e=payErr(m);if(e){err(e);return}}
+    const rec={type:m.k,date:m.date,time:m.time||nowHM(),place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0,unpaid:m.k==="trip"&&!!m.unpaid,...(m.k==="trip"?payRec(m):{pay:"",kaspi:0})};
     if(m.id){const o=D.items.find(x=>x.id===m.id);if(o.date!==rec.date)D.dirty[o.date]=1;if(rec.unpaid)rec.paidAt=null;else if(o.unpaid&&o.date!==td()){rec.paidAt=Date.now();D.dirty[td()]=1}Object.assign(o,rec,{upd:Date.now()});ui.modal=null;done();toast("Сохранено");return}
     const it=Object.assign({id:uid(),created:Date.now()},rec);D.items.push(it);ui.modal=null;done();
     toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);done()})},
@@ -479,7 +525,8 @@ document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.classList&&
 setInterval(()=>{if(!ui.modal&&!drag)render()},30000);
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&ui.modal){ui.modal=null;render()}});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&td()!==ui.today){ui.today=td();render()}});
-document.addEventListener("input",e=>{if(e.target.dataset&&e.target.dataset.f==="place"){const g=$("#sug");if(g)g.innerHTML=sugHTML(e.target.value)}});
+document.addEventListener("input",e=>{const fd=e.target.dataset&&e.target.dataset.f;if((fd==="amount"||fd==="kaspi")&&$("#mixrest")){syncModal();$("#mixrest").innerHTML=mixRest(ui.modal);const er=$("#err");if(er)er.textContent=""}
+  if(e.target.dataset&&e.target.dataset.f==="place"){const g=$("#sug");if(g)g.innerHTML=sugHTML(e.target.value)}});
 window.addEventListener("online",()=>{flush();gsSync()});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){autoClose();flush();gsSync()}});
 setInterval(()=>{autoClose();flush();gsSync()},60000);
