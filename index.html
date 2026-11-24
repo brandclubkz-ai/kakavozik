@@ -335,11 +335,8 @@ function render(){
   <div class="send"><h3>Конец дня</h3><p>${shiftTxt}${!dd.length&&cl?(ob?` <span class="wait">Отчёт ждёт связи.</span>`:tgOn()||!waOn()?` <span class="ok">Отчёт отправлен ✓</span>`:""):""}</p>
     ${dd.length?`<button class="btn pri w" data-a="shift">🔒 Закрыть смену</button>`:""}
     ${!dd.length&&cl&&waOn()&&D.last?`<button class="btn w" data-a="waresend">Отправить отчёт в WhatsApp ещё раз</button>`:""}
-    <button class="lnk" data-a="gssetup">${gsOn()?(gerr?"Google Таблица: ошибка, нажмите":gn?`Google Таблица: ждут отправки ${gn}`:"Google Таблица: всё отправлено ✓"):"Настроить выгрузку в Google Таблицу"}</button>
-    <button class="lnk" style="margin-top:0" data-a="wasetup">${waOn()?`Отчёты в WhatsApp: +${esc(D.wa)}`:"Настроить отправку в WhatsApp"}</button>
-    <button class="lnk" style="margin-top:0" data-a="tgsetup">${tgOn()?`Автоотправка в Telegram: включена${D.tg.name?" ("+esc(D.tg.name)+")":""}`:"Настроить автоотправку в Telegram"}</button>
-    <button class="lnk" style="margin-top:0" data-a="send">Выгрузить все записи файлом</button>
-    <button class="lnk" style="margin-top:0" data-a="imp">Загрузить записи из файла</button></div>
+    <button class="lnk" data-a="wasetup">${waOn()?`Отчёты в WhatsApp: +${esc(D.wa)}`:"Настроить отправку в WhatsApp"}</button>
+    <button class="lnk" style="margin-top:0" data-a="send">Выгрузить все записи файлом</button></div>
   ${ui.modal?`<div class="ov" data-a="close"><div class="sheet" role="dialog" aria-modal="true">${M[ui.modal.k](ui.modal)}</div></div>`:""}`;
   if(ui.modal){const n=$(".sheet");if(n)n.scrollTop=st}
 }
@@ -531,6 +528,9 @@ window.addEventListener("online",()=>{flush();gsSync()});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){autoClose();flush();gsSync()}});
 setInterval(()=>{autoClose();flush();gsSync()},60000);
 load();render();autoClose();flush();gsSync();
+/* Старые записи: если рядом с приложением лежит history.csv, один раз добавляем их (повторы пропускаются). */
+(async()=>{if(D.histDone)return;try{const r=await fetch("history.csv",{cache:"no-store"});if(!r.ok)return;const x=importCSV(await r.text());
+  D.histDone=Date.now();done();if(x.added)toast(`Загружены старые записи: ${x.added}`)}catch(e){}})();
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"))navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>
