@@ -98,7 +98,9 @@ input[type=number]{-moz-appearance:textfield}
 .sug{border:1.5px solid var(--line);border-radius:16px;margin-top:8px;overflow:hidden;background:#fff} .sug:empty{display:none}
 .sgi{display:flex;width:100%;justify-content:space-between;align-items:center;gap:10px;min-height:52px;padding:8px 14px;border-bottom:1.5px solid var(--line);font-size:18px} .sgi:last-child{border:none}
 .sgi b{font-weight:600;overflow-wrap:anywhere;min-width:0} .sgi span{flex:none;font-size:15px;color:var(--mut)}
-.bad{color:var(--red);font-weight:700;font-style:normal} .chip.on.no{background:var(--red);border-color:var(--red)}
+.bad{color:var(--red);font-weight:700;font-style:normal} .pm{font-style:normal;font-weight:600;color:var(--ink2)}
+.paysum{margin-top:10px;font-size:15px;opacity:.9}
+.drow .two{display:flex;gap:6px;flex:none} .drow .two .btn{padding:0 12px} .chip.on.no{background:var(--red);border-color:var(--red)}
 .debt{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;min-height:56px;padding:10px 16px;margin-bottom:10px;border-radius:18px;background:#FBE5E2;color:var(--red);font-size:17px;font-weight:700}
 .drow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1.5px solid var(--line)} .drow div{flex:1;min-width:0} .drow b{display:block;font-size:18px;font-weight:600;overflow-wrap:anywhere} .drow small{font-size:15px;color:var(--mut)} .drow .btn{flex:none;min-height:48px}
 .hint{font-size:15px;color:var(--mut);margin:0 0 14px} .hint b{color:var(--ink2)}
@@ -148,9 +150,9 @@ const RJ=["рейс","рейса","рейсов"];
 
 let D;
 const ui={open:{},modal:null,reset:false,today:td()};
-function load(){D=LS.get(KEY)||{};D.items=D.items||[];D.sentAt=D.sentAt||null;D.plans=D.plans||[];D.closed=D.closed||{};D.dirty=D.dirty||{};D.outbox=D.outbox||[];D.tg=D.tg||null;D.wa=D.wa||null;D.last=D.last||null;try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch{}}
+function load(){D=LS.get(KEY)||{};D.items=D.items||[];D.sentAt=D.sentAt||null;D.plans=D.plans||[];D.closed=D.closed||{};D.dirty=D.dirty||{};D.outbox=D.outbox||[];D.tg=D.tg||null;D.wa=D.wa||null;D.gs=D.gs||null;D.gsDone=D.gsDone||{};D.last=D.last||null;try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch{}}
 function save(){if(!LS.set(KEY,D))toast("Не удалось сохранить: память телефона заполнена")}
-const done=()=>{save();render()};
+const done=()=>{save();render();gsSoon()};
 
 const trips=()=>D.items.filter(i=>i.type==="trip");
 function recentPlaces(){const seen={},out=[];trips().sort((a,b)=>b.created-a.created).forEach(i=>{const k=(i.place||"").trim().toLowerCase();if(k&&!seen[k]){seen[k]=i;out.push(i)}});return out.slice(0,8)}
@@ -158,7 +160,13 @@ function topAmounts(){const m={};trips().forEach(i=>{m[i.amount]=(m[i.amount]||0
 /* Адреса и клиенты: список сам пополняется из записанных рейсов и плана, частые идут первыми. */
 function places(){const m={};[...trips(),...D.plans.filter(p=>!p.tripId)].forEach(i=>{const n=(i.place||"").trim(),k=n.toLowerCase();if(!k)return;const o=m[k]||(m[k]={name:n,n:0,last:0,la:0,amount:0});o.n++;if(i.created>=o.last){o.last=i.created;o.name=n}if(i.amount&&i.created>=o.la){o.la=i.created;o.amount=i.amount}});return Object.values(m).sort((a,b)=>b.n-a.n||b.last-a.last)}
 function sugHTML(q){q=(q||"").trim().toLowerCase();return places().filter(p=>p.name.toLowerCase()!==q&&(!q||p.name.toLowerCase().includes(q))).slice(0,5).map(p=>`<button class="sgi" data-a="pickplace" data-v="${esc(p.name)}"><b>${esc(p.name)}</b><span class="num">${p.n>1?p.n+" "+pl(p.n,["раз","раза","раз"])+(p.amount?" · ":""):""}${p.amount?fmt(p.amount)+" ₸":""}</span></button>`).join("")}
-const paidTog=m=>`<div class="fld"><div class="chips" style="margin-top:0"><button class="chip ${m.unpaid?"":"on"}" data-a="setpaid" data-v="1">Оплатил</button><button class="chip ${m.unpaid?"on no":""}" data-a="setpaid" data-v="0">Не оплатил</button></div></div>`;
+/* Способ оплаты рейса: pay = "kaspi" | "cash"; unpaid = ещё не заплатил. */
+const PAY={kaspi:"Каспи",cash:"Наличные"};
+const payTxt=i=>i.type==="fuel"?"":i.unpaid?"не оплачено":(PAY[i.pay]||"оплачено")+(i.paidAt?" (позже)":"");
+const recvDay=i=>i.paidAt?iso(new Date(i.paidAt)):i.date;
+function recv(dates){const L=trips().filter(i=>!i.unpaid&&dates.includes(recvDay(i)));return{kaspi:sum(L.filter(i=>i.pay==="kaspi"),i=>i.amount),cash:sum(L.filter(i=>i.pay==="cash"),i=>i.amount),none:sum(L.filter(i=>!PAY[i.pay]),i=>i.amount)}}
+const paidTog=m=>{const c=(v,t)=>`<button class="chip ${!m.unpaid&&m.pay===v?"on":""}" data-a="setpay" data-v="${v}">${t}</button>`;
+  return `<div class="fld"><label>Оплата</label><div class="chips" style="margin-top:0">${c("kaspi","Каспи")}${c("cash","Наличные")}<button class="chip ${m.unpaid?"on no":""}" data-a="setpay" data-v="no">Не оплатил</button></div></div>`};
 /* Смены: день считается незакрытым, если в нём есть записи новее последнего закрытия (или что-то удаляли). */
 const stamp=i=>i.upd||i.created;
 const tgOn=()=>!!(D.tg&&D.tg.token&&D.tg.chat);
@@ -166,7 +174,7 @@ const waOn=()=>!!D.wa;
 /* Текст для WhatsApp: итоги и список записей по дням. Слишком длинный сокращаем до итогов. */
 function waText(dates,caption){
   const L=[];dates.forEach(d=>{const it=D.items.filter(i=>i.date===d).sort((a,b)=>itime(a).localeCompare(itime(b))||a.created-b.created);if(!it.length)return;L.push("",dates.length>1?dayLabel(d)+":":"Записи:");
-    it.forEach(i=>L.push(`${itime(i)} ${i.type==="fuel"?"Заправка"+(i.liters?" "+fmt(i.liters)+" л":""):(i.place||"Рейс")}: ${i.type==="fuel"?"−":""}${fmt(i.amount)} ₸${i.unpaid?" (не оплатил)":""}`))});
+    it.forEach(i=>L.push(`${itime(i)} ${i.type==="fuel"?"Заправка"+(i.liters?" "+fmt(i.liters)+" л":""):(i.place||"Рейс")}: ${i.type==="fuel"?"−":""}${fmt(i.amount)} ₸${i.type==="fuel"?"":i.unpaid?" (не оплатил)":i.pay==="kaspi"?" (Каспи)":i.pay==="cash"?" (нал)":""}`))});
   const full=caption+"\n"+L.join("\n");return full.length>3000?caption:full;
 }
 function waOpen(text){const q="phone="+D.wa+"&text="+encodeURIComponent(text);if(isMobile)location.href="whatsapp://send?"+q;else window.open("https://api.whatsapp.com/send?"+q,"_blank")}
@@ -174,7 +182,7 @@ function dirtyDates(){const s=new Set(Object.keys(D.dirty)),t=td();D.items.forEa
 function dayStat(d){const L=D.items.filter(i=>i.date===d),T=L.filter(i=>i.type==="trip");return{n:T.length,earned:sum(T,i=>i.amount),fuel:sum(L.filter(i=>i.type==="fuel"),i=>i.amount)}}
 function csvText(L){
   const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"';L=L.slice().sort((a,b)=>a.date.localeCompare(b.date)||itime(a).localeCompare(itime(b))||a.created-b.created);
-  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал","Оплата"],...L.map(i=>[i.date,itime(i),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):"",i.unpaid?"не оплачено":i.paidAt?"оплачено позже":""])];
+  const rows=[["День","Время","Что","Клиент или адрес","Сумма","Литры","Выехал","Оплата"],...L.map(i=>[i.date,itime(i),i.type==="fuel"?"Заправка":"Рейс",i.place||"",i.amount,i.liters||"",i.started?timeOf(i.started):"",payTxt(i)])];
   return "﻿"+rows.map(r=>r.map(q).join(";")).join("\r\n");
 }
 function shiftReport(dates){
@@ -182,10 +190,12 @@ function shiftReport(dates){
   let lines=[one?`🚛 Смена закрыта: ${dayLabel(dates[0])}`:`🚛 Смена закрыта, дней: ${dates.length}`];
   if(!one)st.slice(-12).forEach(([d,s])=>lines.push(`${dayLabel(d)}: ${s.n} ${pl(s.n,RJ)}, ${fmt(s.earned)} ₸`));
   const unp=trips().filter(i=>i.unpaid&&dates.includes(i.date)),back=trips().filter(i=>!i.unpaid&&i.paidAt&&dates.includes(iso(new Date(i.paidAt)))),debt=trips().filter(i=>i.unpaid);
-  lines.push(`Рейсов: ${tot.n}`,`Заработано: ${fmt(tot.earned)} ₸`);
+  const rv=recv(dates);
+  lines.push(`Рейсов: ${tot.n}`,`Заработано: ${fmt(tot.earned)} ₸`,`Каспи: ${fmt(rv.kaspi)} ₸`,`Наличные: ${fmt(rv.cash)} ₸`);
+  if(rv.none)lines.push(`Без отметки Каспи/нал: ${fmt(rv.none)} ₸`);
   if(unp.length)lines.push(`Из них не оплатили: ${unp.length} ${pl(unp.length,RJ)}, ${fmt(sum(unp,i=>i.amount))} ₸`);
   lines.push(`Топливо: ${fmt(tot.fuel)} ₸`);
-  back.slice(0,6).forEach(i=>lines.push(`Вернули долг: ${i.place||"рейс"} (${dayLabel(i.date)}), ${fmt(i.amount)} ₸`));
+  back.slice(0,6).forEach(i=>lines.push(`Вернули долг: ${i.place||"рейс"} (${dayLabel(i.date)}), ${fmt(i.amount)} ₸${PAY[i.pay]?", "+PAY[i.pay].toLowerCase():""}`));
   if(debt.length)lines.push(`Всего долгов: ${debt.length} ${pl(debt.length,RJ)} на ${fmt(sum(debt,i=>i.amount))} ₸`);
   lines.push(`Всего рейсов за всё время: ${fmt(trips().length)}`);
   return{caption:lines.join("\n").slice(0,1000),csv:csvText(D.items.filter(i=>dates.includes(i.date))),name:one?`reysy-${dates[0]}.csv`:`reysy-${dates[0]}_${dates[dates.length-1]}.csv`,tot};
@@ -195,6 +205,31 @@ async function tgCall(method,body,token){
   const j=await r.json().catch(()=>({}));if(!j.ok)throw new Error(j.description||("ошибка "+r.status));return j.result;
 }
 function tgDoc(o){const fd=new FormData();fd.append("chat_id",D.tg.chat);fd.append("caption",o.caption);fd.append("document",new Blob([o.csv],{type:"text/csv"}),o.name);return tgCall("sendDocument",fd)}
+/* Google Таблица: каждая запись уходит сама. Отправляем только то, что изменилось; удалённое удаляем и там. */
+const gsOn=()=>!!(D.gs&&D.gs.url);
+const hash=s=>{let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return(h>>>0).toString(36)};
+const gsRow=i=>({id:i.id,date:i.date,time:itime(i),type:i.type==="fuel"?"Заправка":"Рейс",place:i.place||"",amount:i.amount,liters:i.liters||"",pay:payTxt(i),started:i.started?timeOf(i.started):""});
+function gsPending(){const rows=[],live={};D.items.forEach(i=>{const r=gsRow(i),h=hash(JSON.stringify(r));live[i.id]=1;if(D.gsDone[i.id]!==h)rows.push([r,h])});return{rows,del:Object.keys(D.gsDone).filter(id=>!live[id])}}
+async function gsPost(url,body){
+  let r;try{r=await fetch(url,{method:"POST",body:JSON.stringify(body)})}catch{throw new Error("нет связи")}
+  const j=await r.json().catch(()=>null);if(!j||!j.ok)throw new Error((j&&j.error)||"таблица не ответила, проверьте ссылку и доступ");return j;
+}
+let gsBusy=false,gsT;
+async function gsSync(){
+  if(gsBusy||!gsOn()||navigator.onLine===false)return;const p=gsPending();if(!p.rows.length&&!p.del.length)return;
+  gsBusy=true;let ok=false;const g=D.gs;
+  try{const part=p.rows.slice(0,200),del=p.del.slice(0,200);await gsPost(g.url,{rows:part.map(x=>x[0]),del});
+    if(D.gs===g){part.forEach(x=>{D.gsDone[x[0].id]=x[1]});del.forEach(id=>{delete D.gsDone[id]});g.err=null;g.at=Date.now();ok=true}}
+  catch(e){g.err=String(e.message||e)}
+  gsBusy=false;LS.set(KEY,D);if(!ui.modal&&!drag)render();if(ok)gsSync();
+}
+const gsSoon=()=>{clearTimeout(gsT);gsT=setTimeout(gsSync,1500)};
+/* Автовыгрузка: прошлые дни, которые забыли закрыть, закрываются и уходят в Telegram сами. */
+function autoClose(){
+  if(!tgOn()||(ui.modal&&ui.modal.k==="shift"))return;const t=td(),dd=dirtyDates().filter(d=>d<t);if(!dd.length)return;
+  const r=shiftReport(dd),n=Date.now();dd.forEach(d=>{D.closed[d]=n;delete D.dirty[d]});
+  D.outbox.push({id:uid(),created:n,caption:r.caption.replace("Смена закрыта","Автовыгрузка"),csv:r.csv,name:r.name});save();render();
+}
 let flushing=false;
 async function flush(){
   if(flushing||!tgOn()||!D.outbox.length||navigator.onLine===false)return;flushing=true;let sent=0;
@@ -228,7 +263,7 @@ function planBlock(t){
 }
 function row(i){
   const f=i.type==="fuel";
-  return `<button class="item" data-a="edit" data-v="${esc(i.id)}"><span class="ic ${f?"f":""}">${f?"⛽":"🚛"}</span><span class="nm"><b>${esc(i.place||(f?"Заправка":"Рейс"))}</b><span>${itime(i)}${f&&i.liters?", "+fmt(i.liters)+" л":""}${i.unpaid?` · <em class="bad">не оплатил</em>`:""}</span></span><span class="am num">${f?"−":""}${fmt(i.amount)} ₸</span></button>`;
+  return `<button class="item" data-a="edit" data-v="${esc(i.id)}"><span class="ic ${f?"f":""}">${f?"⛽":"🚛"}</span><span class="nm"><b>${esc(i.place||(f?"Заправка":"Рейс"))}</b><span>${itime(i)}${f&&i.liters?", "+fmt(i.liters)+" л":""}${i.unpaid?` · <em class="bad">не оплатил</em>`:PAY[i.pay]&&!f?` · <em class="pm">${PAY[i.pay]}</em>`:""}</span></span><span class="am num">${f?"−":""}${fmt(i.amount)} ₸</span></button>`;
 }
 function render(){
   const t=td(),tod=D.items.filter(i=>i.date===t).sort(isort),tt=tod.filter(i=>i.type==="trip");
@@ -237,6 +272,7 @@ function render(){
   const past=Object.keys(days).sort().reverse(),dd=dirtyDates(),old=dd.filter(d=>d<t).length,todDirty=dd.includes(t),ob=D.outbox.length,oerr=ob&&D.outbox[0].err&&D.outbox[0].err!=="нет связи"?D.outbox[0].err:"";
   const all=trips(),debt=all.filter(i=>i.unpaid),mon=all.filter(i=>i.date.slice(0,7)===t.slice(0,7)).length,mname=parse(t).toLocaleDateString("ru-RU",{month:"long"});
   const late=new Date().getHours()>=20&&todDirty&&tod.length;
+  const gp=gsOn()?gsPending():null,gn=gp?gp.rows.length+gp.del.length:0,gerr=gsOn()&&D.gs.err&&D.gs.err!=="нет связи"?D.gs.err:"";
   const cl=D.closed[t],shiftTxt=dd.length?(todDirty&&tt.length?`Сегодня ${tt.length} ${pl(tt.length,RJ)} на ${fmt(earned)} ₸. `:"")+(old?`Не закрыто прошлых дней: ${old}. `:"")+(cl&&todDirty?"После закрытия появились изменения. ":"")+(waOn()?"Нажмите в конце дня: откроется WhatsApp с готовым отчётом.":tgOn()?"Нажмите в конце дня: отчёт уйдёт сам.":"Нажмите в конце дня и выберите, кому отправить."):cl?`Смена закрыта в ${timeOf(cl)}.`:"Сегодня записей ещё нет.";
   const sh=$(".sheet"),st=ui.reset?0:(sh?sh.scrollTop:0);ui.reset=false;
   document.body.classList.toggle("lock",!!ui.modal);
@@ -244,8 +280,10 @@ function render(){
   ${debt.length?`<button class="debt" data-a="debts"><span>Не оплатили: ${debt.length} ${pl(debt.length,RJ)}</span><span class="num">${fmt(sum(debt,i=>i.amount))} ₸ ›</span></button>`:""}
   <section class="hero" aria-label="Сегодня"><div class="when">Сегодня, ${fullDate(t)}</div>
     <div class="cnt"><b class="num">${tt.length}</b><span>${tt.length?pl(tt.length,RJ)+"<br>за сегодня":"рейсов пока<br>нет"}${pend?`<br><small style="font-size:15px;font-weight:500;opacity:.85">в плане ещё ${pend}</small>`:""}</span></div>
-    <div class="sums"><div><small>Заработано</small><b class="num">${fmt(earned)} ₸</b></div><div><small>Топливо</small><b class="num">${fmt(fuel)} ₸</b></div></div></section>
+    <div class="sums"><div><small>Заработано</small><b class="num">${fmt(earned)} ₸</b></div><div><small>Топливо</small><b class="num">${fmt(fuel)} ₸</b></div></div>
+    ${(()=>{const r=recv([t]);return r.kaspi||r.cash?`<div class="paysum num">Каспи ${fmt(r.kaspi)} ₸ · Наличные ${fmt(r.cash)} ₸</div>`:""})()}</section>
   ${ob?`<div class="banner"><span>${oerr?"⚠️":"📶"}</span><span style="flex:1">${oerr?"Отчёт не ушёл: "+esc(oerr):"Нет связи. Отчёт отправится сам"}</span><button class="btn" data-a="${oerr?"tgsetup":"retry"}">${oerr?"Настроить":"Повторить"}</button></div>`:""}
+  ${gerr?`<div class="banner"><span>⚠️</span><span style="flex:1">Таблица: ${esc(gerr)}</span><button class="btn" data-a="gssetup">Настроить</button></div>`:""}
   ${old||late?`<div class="banner"><span>🔒</span><span style="flex:1">${old?`Не закрыта смена: ${old} ${pl(old,["день","дня","дней"])}`:"Конец дня? Закройте смену"}</span><button class="btn" data-a="shift">Закрыть</button></div>`:""}
   ${nextCard(t)}
   <button class="btn pri add" data-a="newtrip">＋ Записать рейс</button>
@@ -257,7 +295,8 @@ function render(){
   <div class="send"><h3>Конец дня</h3><p>${shiftTxt}${!dd.length&&cl?(ob?` <span class="wait">Отчёт ждёт связи.</span>`:tgOn()||!waOn()?` <span class="ok">Отчёт отправлен ✓</span>`:""):""}</p>
     ${dd.length?`<button class="btn pri w" data-a="shift">🔒 Закрыть смену</button>`:""}
     ${!dd.length&&cl&&waOn()&&D.last?`<button class="btn w" data-a="waresend">Отправить отчёт в WhatsApp ещё раз</button>`:""}
-    <button class="lnk" data-a="wasetup">${waOn()?`Отчёты в WhatsApp: +${esc(D.wa)}`:"Настроить отправку в WhatsApp"}</button>
+    <button class="lnk" data-a="gssetup">${gsOn()?(gerr?"Google Таблица: ошибка, нажмите":gn?`Google Таблица: ждут отправки ${gn}`:"Google Таблица: всё отправлено ✓"):"Настроить выгрузку в Google Таблицу"}</button>
+    <button class="lnk" style="margin-top:0" data-a="wasetup">${waOn()?`Отчёты в WhatsApp: +${esc(D.wa)}`:"Настроить отправку в WhatsApp"}</button>
     <button class="lnk" style="margin-top:0" data-a="tgsetup">${tgOn()?`Автоотправка в Telegram: включена${D.tg.name?" ("+esc(D.tg.name)+")":""}`:"Настроить автоотправку в Telegram"}</button>
     <button class="lnk" style="margin-top:0" data-a="send">Выгрузить все записи файлом</button></div>
   ${ui.modal?`<div class="ov" data-a="close"><div class="sheet" role="dialog" aria-modal="true">${M[ui.modal.k](ui.modal)}</div></div>`:""}`;
@@ -279,8 +318,14 @@ M.shift=m=>{const dd=dirtyDates(),r=shiftReport(dd),t=td(),left=D.plans.filter(p
   <p class="err" id="err"></p>
   <div class="btns"><button class="btn" data-a="close">Отмена</button><button class="btn pri" data-a="doshift">Закрыть и отправить</button></div>`};
 M.debts=m=>{const L=trips().filter(i=>i.unpaid).sort((a,b)=>a.date.localeCompare(b.date)||a.created-b.created);return `<h2>Не оплатили</h2>
-  ${L.map(i=>`<div class="drow"><div><b>${esc(i.place||"Рейс")}</b><small>${dayLabel(i.date)} · <span class="num">${fmt(i.amount)} ₸</span></small></div><button class="btn pri" data-a="paid" data-v="${esc(i.id)}">Оплатил</button></div>`).join("")}
+  ${L.map(i=>`<div class="drow"><div><b>${esc(i.place||"Рейс")}</b><small>${dayLabel(i.date)} · <span class="num">${fmt(i.amount)} ₸</span></small></div><span class="two"><button class="btn pri" data-a="paid" data-p="kaspi" data-v="${esc(i.id)}">Каспи</button><button class="btn pri" data-a="paid" data-p="cash" data-v="${esc(i.id)}">Нал</button></span><span hidden>Оплатил</button></div>`).join("")}
   <p class="hint" style="margin-top:12px">Всего: <b class="num">${fmt(sum(L,i=>i.amount))} ₸</b></p><button class="btn w" data-a="close">Закрыть</button>`};
+M.gs=m=>`<h2>Google Таблица</h2>
+  <p class="hint">Каждая запись сама попадает в вашу таблицу Google: рейсы, заправки, правки и оплаты долгов. Без интернета записи ждут и уходят позже.</p>
+  <ol class="steps"><li>В таблице откройте «Расширения» → «Apps Script» и вставьте готовый скрипт.</li><li>Разверните его как веб-приложение с доступом «Все».</li><li>Вставьте сюда ссылку, которая заканчивается на <b>/exec</b>.</li></ol>
+  <div class="fld"><label>Ссылка веб-приложения</label><input class="inp" style="font-size:15px" data-f="url" value="${esc(m.url||"")}" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+  <p class="err" id="err"></p>
+  <div class="btns">${gsOn()?`<button class="btn dng" style="flex:none" data-a="gsoff">Отключить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="gssave">Проверить и включить</button></div>`;
 M.wa=m=>`<h2>Отчёты в WhatsApp</h2>
   <p class="hint">Укажите номер WhatsApp, на который отправлять отчёты. После «Закрыть смену» откроется чат с этим номером и готовым текстом: останется нажать «Отправить».</p>
   <div class="fld"><label>Номер получателя</label><input class="inp" type="tel" inputmode="tel" data-f="phone" value="${esc(m.phone||"")}" placeholder="+7 701 123 45 67" autocomplete="off"></div>
@@ -288,6 +333,7 @@ M.wa=m=>`<h2>Отчёты в WhatsApp</h2>
   <div class="btns">${waOn()?`<button class="btn dng" style="flex:none" data-a="waoff">Отключить</button>`:`<button class="btn" data-a="close">Отмена</button>`}<button class="btn pri" data-a="wasave">Сохранить</button></div>`;
 M.tg=m=>`<h2>Автоотправка в Telegram</h2>
   <ol class="steps"><li>В Telegram откройте <b>@BotFather</b>, отправьте /newbot и получите токен бота.</li><li>С телефона получателя откройте своего бота и нажмите «Старт».</li><li>Вставьте токен сюда и нажмите «Найти получателя».</li></ol>
+  <p class="hint">После включения отчёт и файл уходят сами. Если смену забыли закрыть, она отправится при следующем открытии приложения.</p>
   <div class="fld"><label>Токен бота</label><input class="inp" style="font-size:16px" data-f="token" value="${esc(m.token||"")}" placeholder="123456789:AA..." autocomplete="off" autocapitalize="off" spellcheck="false"></div>
   <div class="fld"><label>Получатель (chat id)${m.name?": "+esc(m.name):""}</label><div style="display:flex;gap:8px"><input class="inp" style="flex:1" inputmode="numeric" data-f="chat" value="${esc(m.chat||"")}" placeholder="например 123456789" autocomplete="off"><button class="btn" style="flex:none" data-a="tgfind">Найти получателя</button></div></div>
   <p class="err" id="err"></p>
@@ -341,10 +387,19 @@ const A={
     if(!ok){err("Отправка отменена, смена не закрыта");return}
     mark();D.sentAt=Date.now();ui.modal=null;done();toast("Смена закрыта");
   },
-  setpaid(el){syncModal();ui.modal.unpaid=el.dataset.v==="0";render()},
+  setpay(el){syncModal();const v=el.dataset.v;ui.modal.unpaid=v==="no";if(v!=="no")ui.modal.pay=v;render()},
   debts(){open({k:"debts"})},
-  paid(el){const i=D.items.find(x=>x.id===el.dataset.v);if(!i)return;i.unpaid=false;i.paidAt=Date.now();D.dirty[td()]=1;if(!trips().some(x=>x.unpaid))ui.modal=null;done();
-    toast(`Оплачено: ${fmt(i.amount)} ₸`,"Отменить",()=>{i.unpaid=true;i.paidAt=null;done()})},
+  paid(el){const i=D.items.find(x=>x.id===el.dataset.v);if(!i)return;const old=i.pay;i.unpaid=false;i.pay=el.dataset.p;i.paidAt=Date.now();D.dirty[td()]=1;if(!trips().some(x=>x.unpaid))ui.modal=null;done();
+    toast(`Оплачено (${PAY[i.pay].toLowerCase()}): ${fmt(i.amount)} ₸`,"Отменить",()=>{i.unpaid=true;i.paidAt=null;i.pay=old;done()})},
+  gssetup(){open({k:"gs",url:gsOn()?D.gs.url:""})},
+  async gssave(){
+    syncModal();const m=ui.modal,u=(m.url||"").trim();
+    if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)){err("Нужна ссылка вида https://script.google.com/macros/s/.../exec");return}
+    err("Проверяю…");
+    try{await gsPost(u,{rows:[],del:[]})}catch(e){if(ui.modal===m)err("Не получилось: "+(e.message||e));return}
+    if(!gsOn()||D.gs.url!==u)D.gsDone={};D.gs={url:u};ui.modal=null;done();toast("Таблица подключена, отправляю записи");gsSync();
+  },
+  gsoff(){D.gs=null;D.gsDone={};ui.modal=null;done();toast("Выгрузка в таблицу отключена")},
   wasetup(){open({k:"wa",phone:D.wa?"+"+D.wa:""})},
   wasave(){syncModal();let n=String(ui.modal.phone||"").replace(/\D/g,"");if(n.length===11&&n[0]==="8")n="7"+n.slice(1);if(n.length===10)n="7"+n;
     if(n.length<11||n.length>15){err("Проверьте номер: нужен полный, например +7 701 123 45 67");return}
@@ -367,14 +422,14 @@ const A={
     err("Проверяю…");
     try{const fd=new FormData();fd.append("chat_id",ch);fd.append("text","✅ Рейсы: автоотправка подключена. Сюда будут приходить отчёты о закрытых сменах.");await tgCall("sendMessage",fd,tk)}
     catch(e){err("Не получилось: "+(e.message||e));return}
-    D.tg={token:tk,chat:ch,name:m.name||""};D.outbox.forEach(o=>delete o.err);ui.modal=null;done();toast("Автоотправка включена");flush();
+    D.tg={token:tk,chat:ch,name:m.name||""};D.outbox.forEach(o=>delete o.err);ui.modal=null;done();toast("Автоотправка включена");autoClose();flush();
   },
   tgoff(){D.tg=null;ui.modal=null;done();toast("Автоотправка отключена")},
   close(){ui.modal=null;render()},
   day(el){ui.open[el.dataset.v]=!ui.open[el.dataset.v];render()},
   newtrip(){open({k:"trip",date:td(),time:nowHM()})},
   newfuel(){open({k:"fuel",date:td(),time:nowHM()})},
-  edit(el){const i=D.items.find(x=>x.id===el.dataset.v);if(i)open({k:i.type,id:i.id,amount:i.amount,place:i.place,liters:i.liters||"",date:i.date,time:itime(i),unpaid:!!i.unpaid})},
+  edit(el){const i=D.items.find(x=>x.id===el.dataset.v);if(i)open({k:i.type,id:i.id,amount:i.amount,place:i.place,liters:i.liters||"",date:i.date,time:itime(i),unpaid:!!i.unpaid,pay:i.pay||"",hadPay:!!i.pay,wasUnpaid:!!i.unpaid})},
   newplan(){open({k:"plan",date:td()})},
   planday(el){syncModal();ui.modal.date=el.dataset.v==="today"?td():tom(td());render()},
   editplan(el){const p=D.plans.find(x=>x.id===el.dataset.v);if(p)open({k:"plan",id:p.id,place:p.place,amount:p.amount||"",date:p.date,time:p.time||""})},
@@ -389,15 +444,16 @@ const A={
     const ti=D.items.findIndex(x=>x.id===p.tripId),it=ti>=0?D.items.splice(ti,1)[0]:null;if(it)D.dirty[it.date]=1;p.done=false;p.tripId=null;p.started=null;done();
     toast("Вернули в план","Отменить",()=>{if(it){D.items.push(it);p.tripId=it.id}p.done=true;done()})},
   savedone(){syncModal();const m=ui.modal,a=num(m.amount),p=D.plans.find(x=>x.id===m.planId);if(!p){A.close();return}
-    if(!(a>0)){err("Введите сумму");return}
-    const it={id:uid(),created:Date.now(),type:"trip",date:td(),time:nowHM(),place:p.place,amount:a,liters:0,planId:p.id,started:p.started||null,unpaid:!!m.unpaid};
+    if(!(a>0)){err("Введите сумму");return}if(!m.unpaid&&!PAY[m.pay]){err("Отметьте оплату: Каспи, наличные или не оплатил");return}
+    const it={id:uid(),created:Date.now(),type:"trip",date:td(),time:nowHM(),place:p.place,amount:a,liters:0,planId:p.id,started:p.started||null,unpaid:!!m.unpaid,pay:m.unpaid?"":m.pay};
     D.items.push(it);p.done=true;p.tripId=it.id;ui.modal=null;done();
     toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);p.done=false;p.tripId=null;done()})},
   pickamt(el){syncModal();ui.modal.amount=el.dataset.v;render()},
   pickplace(el){syncModal();const m=ui.modal,n=el.dataset.v,p=places().find(x=>x.name===n);m.place=n;if(!num(m.amount)&&p&&p.amount)m.amount=p.amount;render()},
   saveitem(){syncModal();const m=ui.modal,a=num(m.amount);
     if(!(a>0)){err("Введите сумму");return}if(!m.date){err("Укажите день");return}
-    const rec={type:m.k,date:m.date,time:m.time||nowHM(),place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0,unpaid:m.k==="trip"&&!!m.unpaid};
+    if(m.k==="trip"&&!m.unpaid&&!PAY[m.pay]&&(!m.id||m.hadPay||m.wasUnpaid)){err("Отметьте оплату: Каспи, наличные или не оплатил");return}
+    const rec={type:m.k,date:m.date,time:m.time||nowHM(),place:m.k==="trip"?(m.place||"").trim():"",amount:a,liters:m.k==="fuel"?num(m.liters):0,unpaid:m.k==="trip"&&!!m.unpaid,pay:m.k==="trip"&&!m.unpaid?(m.pay||""):""};
     if(m.id){const o=D.items.find(x=>x.id===m.id);if(o.date!==rec.date)D.dirty[o.date]=1;if(rec.unpaid)rec.paidAt=null;else if(o.unpaid&&o.date!==td()){rec.paidAt=Date.now();D.dirty[td()]=1}Object.assign(o,rec,{upd:Date.now()});ui.modal=null;done();toast("Сохранено");return}
     const it=Object.assign({id:uid(),created:Date.now()},rec);D.items.push(it);ui.modal=null;done();
     toast(`Записано: ${fmt(a)} ₸`,"Отменить",()=>{D.items=D.items.filter(x=>x.id!==it.id);done()})},
@@ -424,10 +480,10 @@ setInterval(()=>{if(!ui.modal&&!drag)render()},30000);
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&ui.modal){ui.modal=null;render()}});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&td()!==ui.today){ui.today=td();render()}});
 document.addEventListener("input",e=>{if(e.target.dataset&&e.target.dataset.f==="place"){const g=$("#sug");if(g)g.innerHTML=sugHTML(e.target.value)}});
-window.addEventListener("online",flush);
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")flush()});
-setInterval(flush,60000);
-load();render();flush();
+window.addEventListener("online",()=>{flush();gsSync()});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){autoClose();flush();gsSync()}});
+setInterval(()=>{autoClose();flush();gsSync()},60000);
+load();render();autoClose();flush();gsSync();
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"))navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>
